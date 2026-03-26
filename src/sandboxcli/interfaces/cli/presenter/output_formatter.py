@@ -100,13 +100,16 @@ class OutputFormatter:
             output_data = output["output"]
             if isinstance(output_data, dict):
                 # 字典格式 (从 CommandOutput.to_dict() 来的)
-                if output_data.get("stdout"):
-                    lines.append(f"\nOutput:\n{output_data['stdout']}")
-                if output_data.get("stderr"):
-                    lines.append(f"\nError:\n{output_data['stderr']}")
-                if "exit_code" in output_data:
-                    lines.append(f"Exit Code: {output_data['exit_code']}")
-            else:
+                stdout = output_data.get("stdout", "")
+                stderr = output_data.get("stderr", "")
+                exit_code = output_data.get("exit_code", 0)
+                
+                if stdout:
+                    lines.append(f"\nOutput:\n{stdout}")
+                if stderr:
+                    lines.append(f"\nError:\n{stderr}")
+                lines.append(f"Exit Code: {exit_code}")
+            elif output_data:
                 # 字符串格式
                 lines.append(f"\nOutput:\n{output_data}")
 
