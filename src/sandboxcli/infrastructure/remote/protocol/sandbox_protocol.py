@@ -40,14 +40,18 @@ class ShellExecRequest:
 @dataclass
 class ShellExecResponse:
     """Shell 执行响应"""
-    output: str
-    exit_code: int
+    output: str = ""
+    exit_code: int = 0
 
     @classmethod
     def from_dict(cls, data: dict) -> "ShellExecResponse":
         """从字典创建响应对象"""
+        # 确保 output 不为 None，返回空字符串
+        output = data.get("output")
+        if output is None:
+            output = ""
         return cls(
-            output=data.get("output", ""),
+            output=output,
             exit_code=data.get("exit_code", 0),
         )
 
@@ -152,8 +156,28 @@ class SandboxProtocol:
 
     @staticmethod
     def parse_shell_response(data: dict) -> ShellExecResponse:
-        """解析 Shell 执行响应"""
-        return ShellExecResponse.from_dict(data)
+        """解析 Shell 执行响应
+
+        Args:
+            data: API 响应数据
+
+        Returns:
+            ShellExecResponse 对象
+
+        注意：响应格式为 {'success': True, 'data': {'output': ..., 'exit_code': ...}}
+        """
+        # 获取 data 字段中的内容
+        data_obj = data.get("data", data)  # 兼容两种格式：有 data 包装 或 直接是数据
+
+        # 确保 output 不为 None，返回空字符串
+        output = data_obj.get("output")
+        if output is None:
+            output = ""
+
+        return ShellExecResponse(
+            output=output,
+            exit_code=data_obj.get("exit_code", 0),
+        )
 
     @staticmethod
     def parse_file_read_response(data: dict) -> FileReadResponse:

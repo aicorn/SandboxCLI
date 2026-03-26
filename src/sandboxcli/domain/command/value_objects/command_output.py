@@ -31,6 +31,10 @@ class CommandOutput(BaseModel):
         """判断是否有错误"""
         return bool(self.stderr) or self.exit_code != 0
 
+    def has_output(self) -> bool:
+        """判断是否有输出内容（标准输出或标准错误）"""
+        return bool(self.stdout) or bool(self.stderr)
+
     def is_success(self) -> bool:
         """判断是否成功"""
         return not self.has_error()

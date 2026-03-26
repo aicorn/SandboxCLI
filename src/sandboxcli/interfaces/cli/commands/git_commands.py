@@ -3,6 +3,11 @@ import click
 
 from sandboxcli.application.commands.git import CloneRepositoryCommand, PullCodeCommand, SwitchBranchCommand
 from sandboxcli.application.queries.git import GetBranchesQuery, GetGitLogQuery, GetGitStatusQuery
+from sandboxcli.application.services.git_app_service import GitAppService
+from sandboxcli.interfaces.cli.presenter.output_formatter import OutputFormatter
+
+# 创建应用服务实例
+_git_service = GitAppService()
 
 
 @click.group(name="git")
@@ -78,32 +83,6 @@ def pull_code(repo_path: str, branch: str, rebase: bool):
     # TODO: 调用应用服务
 
 
-@git_group.command(name="config")
-def get_git_config():
-    """获取Git配置
-    
-    获取当前配置的Git仓库信息。
-    
-    示例:
-        sandboxcli git config
-    """
-    from sandboxcli.infrastructure.persistence.config.config_repository import ConfigRepository
-    from sandboxcli.domain.configuration.aggregates.config_aggregate import ConfigAggregate
-    from sandboxcli.application.services.configuration_app_service import ConfigurationAppService
-    
-    repository = ConfigRepository()
-    config = repository.load()
-    config_aggregate = ConfigAggregate(config)
-    service = ConfigurationAppService(config_aggregate)
-    
-    git_config = service.get_git_config()
-    if git_config:
-        import json
-        click.echo(json.dumps(git_config.to_dict(), indent=2, ensure_ascii=False))
-    else:
-        click.echo("Git配置未设置")
-
-
 @git_group.command(name="clone")
 @click.argument("url")
 @click.option("--target-dir", "-d", help="目标目录")
@@ -130,23 +109,15 @@ def clone_repository(url: str, target_dir: str, branch: str, depth: int, recursi
         use_config_git=use_config_git,
     )
     
-    click.echo(f"Cloning repository: {url}")
-    if target_dir:
-        click.echo(f"Target directory: {target_dir}")
-    if branch:
-        click.echo(f"Branch: {branch}")
-    if depth:
-        click.echo(f"Depth: {depth}")
-    if recursive:
-        click.echo("Recursive: Yes")
+    # 调用应用服务执行克隆
+    result = _git_service.execute_clone(command)
     
-    # TODO: 调用应用服务执行克隆
-    # git_app_service = GitAppService()
-    # result = git_app_service.execute_clone(command)
-    # if result.is_success():
-    #     click.echo(f"Successfully cloned to: {result.value.cloned_path}")
-    # else:
-    #     click.echo(f"Error: {result.error}", err=True)
+    if result.is_failure():
+        click.echo(f"Error: {result.error}", err=True)
+        raise click.ClickException(result.error)
+    
+    clone_result = result.value
+    click.echo(f"Successfully cloned to: {clone_result.cloned_path}")
 
 
 __all__ = ["git_group"]
