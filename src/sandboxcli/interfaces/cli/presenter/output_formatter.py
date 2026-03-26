@@ -74,11 +74,31 @@ class OutputFormatter:
         return f"\033[93mWarning: {message}\033[0m"
 
     @staticmethod
-    def format_command_output(output: Dict) -> str:
-        """格式化命令执行输出"""
+    def format_command_output(output: Dict, verbose: bool = False) -> str:
+        """格式化命令执行输出
+
+        Args:
+            output: 输出字典
+            verbose: 是否显示详细信息（默认 False，只显示输出内容）
+        """
         if not output:
             return "No output"
 
+        # 简洁模式：只显示输出内容
+        if not verbose:
+            output_data = output.get("output")
+            if isinstance(output_data, dict):
+                stdout = output_data.get("stdout", "")
+                stderr = output_data.get("stderr", "")
+                if stderr:
+                    # 错误输出到 stderr
+                    return stderr
+                return stdout
+            elif output_data:
+                return str(output_data)
+            return ""
+
+        # 详细模式：显示完整信息
         lines = []
         lines.append("=" * 40)
         lines.append("Command Execution Result")
@@ -103,15 +123,26 @@ class OutputFormatter:
                 stdout = output_data.get("stdout", "")
                 stderr = output_data.get("stderr", "")
                 exit_code = output_data.get("exit_code", 0)
-                
-                if stdout:
-                    lines.append(f"\nOutput:\n{stdout}")
-                if stderr:
-                    lines.append(f"\nError:\n{stderr}")
+
+                # 始终显示输出内容，即使是空字符串也要显示
+                # 只有当 stdout 和 stderr 都为空时才显示 "No output"
+                if stdout or stderr:
+                    if stdout:
+                        lines.append(f"\nOutput:\n{stdout}")
+                    if stderr:
+                        lines.append(f"\nError:\n{stderr}")
+                else:
+                    lines.append("\nOutput: (empty)")
+
                 lines.append(f"Exit Code: {exit_code}")
             elif output_data:
                 # 字符串格式
                 lines.append(f"\nOutput:\n{output_data}")
+            else:
+                # output 存在但是空（如空字典）
+                lines.append("\nOutput: (empty)")
+                if "exit_code" in output_data if isinstance(output_data, dict) else False:
+                    lines.append(f"Exit Code: {output.get('exit_code', 0)}")
 
         # 兼容旧格式
         if "error" in output and output["error"]:

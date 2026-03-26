@@ -165,7 +165,7 @@ Config Aggregate (Aggregate Root)
 | Value Object | 职责 |
 |--------------|------|
 | CommandInput | 命令输入（命令字符串、参数） |
-| CommandOutput | 命令输出（标准输出、错误输出） |
+| CommandOutput | 命令输出（标准输出、标准错误） |
 | ExecutionStatus | 执行状态（成功/失败/超时） |
 | Timestamp | 时间戳 |
 
@@ -182,6 +182,22 @@ Execution Aggregate (Aggregate Root)
 ├── output: CommandOutput (Value Object)
 └── status: ExecutionStatus (Value Object)
 ```
+
+#### CommandOutput 设计
+
+CommandOutput 是命令执行结果的核心 Value Object，必须包含实际输出内容：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| stdout | str | 标准输出（命令的实际执行结果） |
+| stderr | str | 标准错误输出 |
+| exitCode | int | 退出码（0表示成功） |
+| hasOutput | bool | 是否有输出内容 |
+
+**设计原则**：
+- CommandOutput 是必须的，即使是空输出也需要返回空字符串
+- stdout 不应为 None，应始终有值（空字符串表示无输出）
+- 只有当命令成功执行且有输出时，CLI 界面才应该显示 stdout 内容
 
 #### Domain Events
 
@@ -700,6 +716,66 @@ src/
 
 - **优先使用 Value Objects**：如 `CommandInput`、`CommandOutput`、`GitStatus` 等没有身份标识的概念都设计为 Value Objects
 - **不可变性**：所有 Value Objects 设计为不可变，确保线程安全和简化并发处理
+- **CommandOutput 必须包含输出**：命令执行结果必须包含 stdout 内容，即使是空字符串也不能为 None
+
+### 5.6 命令输出处理原则
+
+**问题描述**：`sandboxcli command exec "ls"` 执行成功（Exit Code: 0），但没有显示执行结果。
+
+**根因分析**：
+1. CommandOutput 的 stdout 字段可能为 None 而非空字符串
+2. CLI 界面在 stdout 为空或 None 时不显示输出
+3. **API 响应格式不匹配**：`/v1/shell/exec` 返回 `{'success': True, 'data': {'output': '...'}}`，但解析时未正确提取 data 字段
+
+**解决方案**：
+1. **领域层**：CommandOutput 的 stdout 字段不应为 Optional，必须有默认值（空字符串）
+2. **应用层**：执行命令后，无论是否有输出都应返回完整的 CommandOutput
+3. **接口层**：CLI 展示时，检查 hasOutput 或 stdout 是否为空字符串，决定是否显示输出信息
+4. **协议层**：`parse_shell_response` 需要正确解析 `data` 字段中的 output
+
+### 5.7 CLI 输出模式设计
+
+**需求**：命令执行结果需要支持两种输出模式：
+- **简洁模式（默认）**：只显示命令的实际输出，像在本地执行一样
+- **详细模式（--verbose）**：显示完整的执行信息，包括 Execution ID、Status、Exit Code 等
+
+**实现方式**：
+
+| 模式 | 参数 | 输出内容 |
+|------|------|----------|
+| 简洁模式 | 默认（无 --verbose） | 只显示 stdout 内容 |
+| 详细模式 | --verbose | 显示完整执行信息 |
+
+**详细模式输出格式**：
+```
+========================================
+Command Execution Result
+========================================
+Execution ID: xxx
+Command: pwd
+Status: SUCCESS
+
+Output:
+/home/gem
+Exit Code: 0
+```
+
+**简洁模式输出格式**：
+```
+/home/gem
+```
+
+### 5.8 API 响应格式
+
+**Shell Exec 响应格式**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| success | bool | 请求是否成功 |
+| data | object | 响应数据 |
+| data.output | str | 命令输出内容 |
+| data.exit_code | int | 命令退出码 |
+| data.status | str | 命令执行状态 |
 
 ---
 

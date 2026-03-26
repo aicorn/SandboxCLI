@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added sensitive information hiding (password and key_content are masked by default)
 - Fixed config_repository serialization to properly save items configuration
 - Removed sensitive URL exposure in CLI help text and documentation
+- Added `--verbose` / `-v` option to `command exec` and `command run` commands for detailed output
+- Added `has_output()` method to `CommandOutput` value object
+
+### Fixed
+- Fixed command execution output not displaying results (API response format parsing issue)
+- Fixed `parse_shell_response()` to correctly extract output from `data` field
+- Fixed `ShellExecResponse.from_dict()` to handle None values
+- Fixed `OutputFormatter` to always display output content (even when empty)
+- Fixed CLI output display issue when stdout is empty
 
 ## [0.0.2] - 2026-03-25
 
