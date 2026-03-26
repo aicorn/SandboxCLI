@@ -48,7 +48,7 @@ class ExecutionAggregate:
     def to_dict(self) -> dict:
         """转换为字典"""
         result = {
-            "id": self._execution.id,
+            "execution_id": self._execution.id,
             "command": str(self._execution.command_input),
             "status": str(self._execution.status),
             "started_at": str(self._execution.started_at) if self._execution.started_at else None,

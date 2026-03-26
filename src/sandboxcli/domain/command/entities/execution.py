@@ -55,6 +55,24 @@ class Execution(BaseModel):
         self.status = self.status.mark_timeout()
         self.ended_at = Timestamp.now()
 
+    def mark_timeout_with_connection_fail(self) -> None:
+        """执行超时且连接检测失败"""
+        self.command_output = CommandOutput(
+            stderr="Command execution timed out. Connection to sandbox service is unreachable.",
+            exit_code=124
+        )
+        self.status = self.status.mark_timeout_with_connection_fail()
+        self.ended_at = Timestamp.now()
+
+    def mark_timeout_with_connection_ok(self) -> None:
+        """执行超时但连接正常（可能是命令执行慢）"""
+        self.command_output = CommandOutput(
+            stderr="Command execution timed out, but sandbox service is reachable.",
+            exit_code=124
+        )
+        self.status = self.status.mark_timeout_with_connection_ok()
+        self.ended_at = Timestamp.now()
+
     def get_duration(self) -> Optional[float]:
         """获取执行时长（秒）"""
         if self.started_at and self.ended_at:

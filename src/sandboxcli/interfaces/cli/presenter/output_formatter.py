@@ -73,5 +73,48 @@ class OutputFormatter:
         """格式化警告信息"""
         return f"\033[93mWarning: {message}\033[0m"
 
+    @staticmethod
+    def format_command_output(output: Dict) -> str:
+        """格式化命令执行输出"""
+        if not output:
+            return "No output"
+
+        lines = []
+        lines.append("=" * 40)
+        lines.append("Command Execution Result")
+        lines.append("=" * 40)
+
+        # 基本信息
+        if "execution_id" in output:
+            lines.append(f"Execution ID: {output['execution_id']}")
+
+        if "command" in output:
+            lines.append(f"Command: {output['command']}")
+
+        # 执行状态
+        if "status" in output:
+            lines.append(f"Status: {output['status']}")
+
+        # 输出内容 - 支持字典和字符串两种格式
+        if "output" in output:
+            output_data = output["output"]
+            if isinstance(output_data, dict):
+                # 字典格式 (从 CommandOutput.to_dict() 来的)
+                if output_data.get("stdout"):
+                    lines.append(f"\nOutput:\n{output_data['stdout']}")
+                if output_data.get("stderr"):
+                    lines.append(f"\nError:\n{output_data['stderr']}")
+                if "exit_code" in output_data:
+                    lines.append(f"Exit Code: {output_data['exit_code']}")
+            else:
+                # 字符串格式
+                lines.append(f"\nOutput:\n{output_data}")
+
+        # 兼容旧格式
+        if "error" in output and output["error"]:
+            lines.append(f"\nError: {output['error']}")
+
+        return "\n".join(lines)
+
 
 __all__ = ["OutputFormatter"]

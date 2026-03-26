@@ -6,8 +6,8 @@ from typing import Any, Dict, Optional
 
 import paramiko
 
-from domain.command.value_objects import CommandInput, CommandOutput
-from domain.connection.value_objects import ConnectionConfig, AuthCredential
+from ....domain.command.value_objects import CommandInput, CommandOutput
+from ....domain.connection.value_objects import ConnectionConfig, AuthCredential
 
 from ..adapter.remote_adapter import RemoteAdapter
 

@@ -4,7 +4,7 @@
 """
 from typing import Optional
 
-from domain.connection.value_objects import ConnectionConfig, AuthCredential
+from ....domain.connection.value_objects import ConnectionConfig, AuthCredential
 
 from ..adapter.remote_adapter import RemoteAdapter
 from ..client.sandbox_client import SandboxClient
@@ -71,9 +71,9 @@ class RemoteAdapterFactory:
             AIO Sandbox 客户端
         """
         config = ConnectionConfig(
-            host="",  # 不使用 SSH
+            host=None,  # 不使用 SSH
             port=8080,
-            username="",
+            username=None,
             use_ssl=False,
             verify_ssl=verify_ssl,
             base_url=base_url,

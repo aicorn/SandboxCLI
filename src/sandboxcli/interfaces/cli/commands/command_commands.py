@@ -2,6 +2,12 @@
 import click
 
 from sandboxcli.application.commands.command import ExecuteCommandCommand
+from sandboxcli.application.services.command_app_service import CommandAppService
+from sandboxcli.interfaces.cli.presenter.output_formatter import OutputFormatter
+
+
+# 创建应用服务实例
+_command_service = CommandAppService()
 
 
 @click.group(name="command")
@@ -23,7 +29,7 @@ def execute_command(command: str, args: tuple, cwd: str, timeout: int, env: tupl
         if "=" in e:
             key, value = e.split("=", 1)
             env_dict[key] = value
-    
+
     cmd = ExecuteCommandCommand(
         command=command,
         args=list(args),
@@ -31,16 +37,39 @@ def execute_command(command: str, args: tuple, cwd: str, timeout: int, env: tupl
         timeout=timeout,
         env=env_dict if env_dict else None,
     )
-    click.echo(f"Executing: {cmd.get_full_command()}")
-    # TODO: 调用应用服务
+
+    result = _command_service.execute_command(cmd)
+
+    if result.is_failure():
+        click.echo(f"Error: {result.error}", err=True)
+        raise click.Abort()
+
+    output = result.value
+    click.echo(OutputFormatter.format_command_output(output))
 
 
 @command_group.command(name="run")
 @click.argument("cmd")
 def run_command(cmd: str):
     """快速执行命令"""
-    click.echo(f"Running: {cmd}")
-    # TODO: 调用应用服务
+    # 将命令字符串解析为命令和参数
+    parts = cmd.strip().split()
+    command = parts[0] if parts else ""
+    args = parts[1:] if len(parts) > 1 else []
+
+    execute_cmd = ExecuteCommandCommand(
+        command=command,
+        args=args,
+    )
+
+    result = _command_service.execute_command(execute_cmd)
+
+    if result.is_failure():
+        click.echo(f"Error: {result.error}", err=True)
+        raise click.Abort()
+
+    output = result.value
+    click.echo(OutputFormatter.format_command_output(output))
 
 
 __all__ = ["command_group"]

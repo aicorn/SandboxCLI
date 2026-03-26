@@ -6,8 +6,8 @@ from typing import Any, Dict, Optional
 
 import httpx
 
-from domain.command.value_objects import CommandInput, CommandOutput
-from domain.connection.value_objects import ConnectionConfig
+from ....domain.command.value_objects import CommandInput, CommandOutput
+from ....domain.connection.value_objects import ConnectionConfig
 
 from ..adapter.remote_adapter import RemoteAdapter
 from ..protocol.sandbox_protocol import SandboxProtocol
@@ -80,7 +80,7 @@ class SandboxClient(RemoteAdapter):
 
         request = SandboxProtocol.build_shell_exec_request(
             command=command_input.command,
-            timeout=command_input.timeout,
+            timeout=self._timeout,
         )
 
         try:
@@ -244,7 +244,7 @@ class SandboxAsyncClient(SandboxClient):
         ) as client:
             request = SandboxProtocol.build_shell_exec_request(
                 command=command_input.command,
-                timeout=command_input.timeout,
+                timeout=self._timeout,
             )
 
             try:

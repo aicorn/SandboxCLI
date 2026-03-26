@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Support for connection health check on command timeout
+- Added `HealthCheckResult` value object for connection health check results
+- Added `ConnectionHealthCheckService` domain service for connection health detection
+- Added `CommandTimeoutEvent` domain event for timeout handling
+- Added `TIMEOUT_WITH_CONNECTION_FAIL` and `TIMEOUT_WITH_CONNECTION_OK` execution status
+- Command execution now automatically checks connection health when timeout occurs
+- Distinguish between network issues and slow command execution on timeout
 - Support for configuring sandbox type (`sandbox_type` field in configuration)
 - Added `SandboxType` value object with AIO, SSH, and Custom types
 - Added `Config.update_sandbox_type()` method for runtime configuration updates

@@ -5,8 +5,8 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
-from domain.command.value_objects import CommandInput, CommandOutput
-from domain.connection.value_objects import ConnectionConfig
+from ....domain.command.value_objects import CommandInput, CommandOutput
+from ....domain.connection.value_objects import ConnectionConfig
 
 
 class RemoteAdapter(ABC):

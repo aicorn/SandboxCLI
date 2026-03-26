@@ -1,6 +1,6 @@
 # SandboxCLI DDD 设计文档
 
-> **版本更新说明**：根据最新需求文档，增加了Git克隆仓库功能，并在配置系统中增加相应字段。
+> **版本更新说明**：根据最新需求文档，增加了指令超时时验证远程沙盒服务连接性的功能设计。
 
 ## 1. 战略设计
 
@@ -52,6 +52,7 @@ SandboxCLI 是一个远程沙盒系统控制工具，用户通过 CLI 客户端�
 |------------|------|------|
 | Configuration → Connection | Customer-Supplier | 配置上下文需要连接上下文来测试配置的有效性 |
 | Command → Connection | Customer-Supplier | 指令执行依赖连接进行远程通信 |
+| Command → Connection | **Event-Driven (on timeout)** | **指令超时时，Command上下文发布事件触发Connection上下文的健康检测** |
 | Git → Connection | Customer-Supplier | Git 操作依赖连接进行远程通信 |
 | Configuration → Git | Customer-Supplier | Git上下文需要配置上下文提供Git操作所需的认证信息 |
 | Configuration, Command, Git | Separate Ways | 三个上下文之间相互独立，无直接依赖 |
@@ -99,6 +100,7 @@ SandboxCLI 是一个远程沙盒系统控制工具，用户通过 CLI 客户端�
 | 连接配置 | ConnectionConfig | 服务器地址、端口、认证信息 |
 | 连接会话 | ConnectionSession | 与远程服务器的会话连接 |
 | 连接状态 | ConnectionStatus | CONNECTED, DISCONNECTED, CONNECTING |
+| 健康检查结果 | HealthCheckResult | 连接健康检测的结果 |
 
 ---
 
@@ -187,6 +189,79 @@ Execution Aggregate (Aggregate Root)
 |-------|------|
 | CommandExecutedEvent | 命令执行事件 |
 | CommandFailedEvent | 命令执行失败事件 |
+| **CommandTimeoutEvent** | **指令超时事件** |
+
+### 指令超时处理设计
+
+当指令执行超时时，系统需要能够检测是否为远程沙盒服务连接问题导致的超时。为此增加以下设计：
+
+**CommandTimeoutEvent（领域事件）**:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| executionId | ExecutionId | 超时的执行ID |
+| command | str | 超时的命令字符串 |
+| timeoutDuration | int | 超时时长（秒） |
+| connectionCheckRequired | bool | 是否需要检查连接（默认True） |
+
+**处理流程**：
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   指令超时处理流程                                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  1. 指令执行超时                                                  │
+│     │                                                           │
+│     ▼                                                            │
+│  2. 触发 CommandTimeoutEvent                                    │
+│     │                                                           │
+│     ▼                                                            │
+│  3. ConnectionHealthCheckService 执行连接检测                   │
+│     │                                                           │
+│     ├── 能够连接到沙盒服务 ──▶ 返回连接状态报告                    │
+│     │                                                           │
+│     └── 无法连接到沙盒服务 ──▶ 返回连接失败，标记为网络问题         │
+│     │                                                           │
+│     ▼                                                            │
+│  4. 根据检测结果更新 Execution 状态                               │
+│     │                                                           │
+│     ├── 网络问题: ExecutionStatus = TIMEOUT_WITH_CONNECTION_FAIL │
+│     └── 其他原因: ExecutionStatus = TIMEOUT                      │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**ExecutionStatus 扩展**：
+
+| 状态值 | 说明 |
+|--------|------|
+| TIMEOUT | 超时（原因未知） |
+| TIMEOUT_WITH_CONNECTION_FAIL | 超时，且连接检测失败 |
+| TIMEOUT_WITH_CONNECTION_OK | 超时，但连接正常（可能是命令本身执行慢） |
+
+#### Connection Context 新增服务
+
+| Service | 职责 |
+|---------|------|
+| **ConnectionHealthCheckService** | **检测与远程沙盒服务的连接健康状态** |
+
+**ConnectionHealthCheckService 接口设计**：
+
+| 方法 | 返回类型 | 说明 |
+|------|----------|------|
+| check_connection() | HealthCheckResult | 检测连接状态 |
+| ping() | bool | 简单ping检测 |
+| get_connection_status() | ConnectionStatus | 获取当前连接状态 |
+
+**HealthCheckResult (Value Object)**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| isReachable | bool | 是否可到达 |
+| latency | Optional[int] | 延迟（毫秒） |
+| errorMessage | Optional[str] | 错误信息（如果不可达） |
+| checkedAt | Timestamp | 检测时间 |
 
 ### 2.3 Git 上下文 (Git Context)
 
@@ -275,6 +350,14 @@ CloneOperation Aggregate (Aggregate Root)
 | ConnectionConfig | 连接配置 |
 | ConnectionStatus | 连接状态 |
 | AuthCredential | 认证凭据 |
+| **HealthCheckResult** | **连接健康检查结果** |
+
+#### Domain Services
+
+| Service | 职责 |
+|---------|------|
+| ConnectionService | 连接管理服务 |
+| **ConnectionHealthCheckService** | **连接健康检测服务** |
 
 #### Aggregate
 
@@ -377,7 +460,8 @@ src/
 │   │   ├── aggregates/
 │   │   │   └── connection_aggregate.py
 │   │   └── services/
-│   │       └── connection_service.py
+│   │       ├── connection_service.py
+│   │       └── connection_health_check_service.py  # 新增：连接健康检测服务
 │   │
 │   └── shared/                      # 共享内核
 │       ├── value_objects/
@@ -427,7 +511,8 @@ src/
 │   │   └── client/
 │   │       ├── sandbox_client.py   # 抽象客户端接口
 │   │       ├── aio_client.py       # AIO沙盒客户端
-│   │       └── ssh_client.py       # SSH客户端
+│   │       ├── ssh_client.py       # SSH客户端
+│   │       └── health_check_client.py  # 连接健康检查客户端
 │   │
 │   └── logging/                     # 日志
 │       └── logger.py

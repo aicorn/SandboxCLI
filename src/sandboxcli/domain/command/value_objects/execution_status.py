@@ -9,6 +9,8 @@ class ExecutionStatusEnum(str, Enum):
     SUCCESS = "SUCCESS"
     FAILED = "FAILED"
     TIMEOUT = "TIMEOUT"
+    TIMEOUT_WITH_CONNECTION_FAIL = "TIMEOUT_WITH_CONNECTION_FAIL"  # 超时且连接检测失败
+    TIMEOUT_WITH_CONNECTION_OK = "TIMEOUT_WITH_CONNECTION_OK"  # 超时但连接正常
     RUNNING = "RUNNING"
     PENDING = "PENDING"
 
@@ -31,6 +33,14 @@ class ExecutionStatus(BaseModel):
         """判断是否超时"""
         return self.status == ExecutionStatusEnum.TIMEOUT
 
+    def is_timeout_with_connection_fail(self) -> bool:
+        """判断是否超时且连接检测失败"""
+        return self.status == ExecutionStatusEnum.TIMEOUT_WITH_CONNECTION_FAIL
+
+    def is_timeout_with_connection_ok(self) -> bool:
+        """判断是否超时但连接正常"""
+        return self.status == ExecutionStatusEnum.TIMEOUT_WITH_CONNECTION_OK
+
     def is_running(self) -> bool:
         """判断是否正在运行"""
         return self.status == ExecutionStatusEnum.RUNNING
@@ -50,6 +60,14 @@ class ExecutionStatus(BaseModel):
     def mark_timeout(self) -> "ExecutionStatus":
         """标记为超时"""
         return ExecutionStatus(status=ExecutionStatusEnum.TIMEOUT)
+
+    def mark_timeout_with_connection_fail(self) -> "ExecutionStatus":
+        """标记为超时且连接检测失败"""
+        return ExecutionStatus(status=ExecutionStatusEnum.TIMEOUT_WITH_CONNECTION_FAIL)
+
+    def mark_timeout_with_connection_ok(self) -> "ExecutionStatus":
+        """标记为超时但连接正常"""
+        return ExecutionStatus(status=ExecutionStatusEnum.TIMEOUT_WITH_CONNECTION_OK)
 
     def mark_running(self) -> "ExecutionStatus":
         """标记为运行中"""
