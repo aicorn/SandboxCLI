@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field, PrivateAttr
 
-from ..value_objects import ConfigItem, ServerAddress, Timeout, SandboxType
+from ..value_objects import ConfigItem, ServerAddress, Timeout, SandboxType, WorkingDirectory
 
 
 class Config(BaseModel):
@@ -13,6 +13,7 @@ class Config(BaseModel):
     timeout: Timeout = Field(default_factory=Timeout.default)
     username: Optional[str] = None
     sandbox_type: SandboxType = Field(default_factory=SandboxType.default_aio)  # 沙盒类型
+    working_directory: WorkingDirectory = Field(default_factory=WorkingDirectory.default)  # 工作目录
     items: Dict[str, ConfigItem] = Field(default_factory=dict, exclude=True)
 
     model_config = {"frozen": False}
@@ -81,6 +82,22 @@ class Config(BaseModel):
             description=description,
         )
 
+    def update_working_directory(self, path: str) -> None:
+        """更新工作目录
+
+        Args:
+            path: 工作目录路径
+        """
+        self.working_directory = WorkingDirectory.from_path(path)
+
+    def get_working_directory_path(self) -> str:
+        """获取工作目录路径
+
+        Returns:
+            工作目录路径字符串
+        """
+        return self.working_directory.path
+
     def to_dict(self) -> dict:
         """转换为字典"""
         return {
@@ -89,6 +106,7 @@ class Config(BaseModel):
             "timeout": str(self.timeout),
             "username": self.username,
             "sandbox_type": str(self.sandbox_type),
+            "working_directory": str(self.working_directory),
             "items": [item.to_dict() for item in self.items.values()],
         }
 

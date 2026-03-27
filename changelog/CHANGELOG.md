@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Support for working directory configuration (`--working-directory` option in `config set`)
+- Added `WorkingDirectory` value object with default value "."
+- Added `WorkingDirectoryChangedEvent` domain event for tracking directory changes
+- Added `working_directory` field to configuration persistence
+- Git clone command now executes in the configured working directory
+- CLI displays working directory change message when directory is updated
 - Support for connection health check on command timeout
 - Added `HealthCheckResult` value object for connection health check results
 - Added `ConnectionHealthCheckService` domain service for connection health detection

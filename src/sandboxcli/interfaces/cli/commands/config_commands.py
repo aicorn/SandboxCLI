@@ -57,7 +57,8 @@ def get_config(config_id: str, include_sensitive: bool):
 @click.option("--key", help="自定义配置键")
 @click.option("--value", help="自定义配置值")
 @click.option("--base-url", help="AIO Sandbox HTTP API 地址 (如 http://your-aio-server:8080)")
-def update_config(host, port, username, timeout, key, value, base_url):
+@click.option("--working-directory", help="工作目录 (默认值为 '.')")
+def update_config(host, port, username, timeout, key, value, base_url, working_directory):
     """更新配置"""
     command = UpdateConfigCommand(
         server_host=host,
@@ -67,6 +68,7 @@ def update_config(host, port, username, timeout, key, value, base_url):
         config_key=key,
         config_value=value,
         base_url=base_url,
+        working_directory=working_directory,
     )
     
     service, repository = _get_config_service()
@@ -83,6 +85,13 @@ def update_config(host, port, username, timeout, key, value, base_url):
             click.echo(f"  Port: {port}")
         if username:
             click.echo(f"  Username: {username}")
+        if working_directory:
+            click.echo(f"  Working Directory: {working_directory}")
+            # 显示工作目录变更提示
+            if service._config.pending_events:
+                for event in service._config.pending_events:
+                    if hasattr(event, 'get_change_message'):
+                        click.echo(f"  提示: {event.get_change_message()}")
     else:
         click.echo(f"Error: {result.error}", err=True)
 

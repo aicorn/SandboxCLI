@@ -13,7 +13,8 @@ class CloneOptions(BaseModel):
     target_dir: Optional[str] = None   # 目标目录
     branch: Optional[str] = None       # 指定分支
     depth: Optional[int] = None        # 浅克隆深度
-    recursive: bool = False            # 是否递归克隆子模块
+    recursive: bool = False           # 是否递归克隆子模块
+    working_directory: str = "."      # 工作目录（用于确定克隆时的基准目录）
     description: Optional[str] = None
     
     model_config = {"frozen": True}
@@ -80,6 +81,7 @@ class CloneOptions(BaseModel):
             "branch": self.branch,
             "depth": self.depth,
             "recursive": self.recursive,
+            "working_directory": self.working_directory,
             "description": self.description,
         }
     

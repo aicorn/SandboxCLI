@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 from sandboxcli.domain.configuration.entities import Config
-from sandboxcli.domain.configuration.value_objects import ServerAddress, Timeout
+from sandboxcli.domain.configuration.value_objects import ServerAddress, Timeout, WorkingDirectory
 
 
 class ConfigRepository:
@@ -70,6 +70,13 @@ class ConfigRepository:
         if config.username:
             data["username"] = config.username
 
+        # 序列化 working_directory
+        if config.working_directory:
+            data["working_directory"] = {
+                "path": config.working_directory.path,
+                "isDefault": config.working_directory.isDefault,
+            }
+
         # 序列化items（包括git_config等自定义配置项）
         # 使用get_all_items()因为items字段有exclude=True
         all_items = config.get_all_items()
@@ -98,6 +105,14 @@ class ConfigRepository:
 
         if "username" in data:
             config.username = data["username"]
+
+        # 反序列化 working_directory
+        if "working_directory" in data:
+            wd_data = data["working_directory"]
+            config.working_directory = WorkingDirectory(
+                path=wd_data.get("path", "."),
+                isDefault=wd_data.get("isDefault", True),
+            )
 
         if "items" in data and data["items"]:
             for key, item_data in data["items"].items():

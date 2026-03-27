@@ -8,6 +8,7 @@ from .sandbox_type import SandboxType, SandboxTypeEnum
 from .server_address import ServerAddress
 from .ssh_key import SSHKey
 from .timeout import Timeout
+from .working_directory import WorkingDirectory
 
 __all__ = [
     "ConfigItem",
@@ -21,4 +22,5 @@ __all__ = [
     "GitAuthTypeEnum",
     "SSHKey",
     "GitCredential",
+    "WorkingDirectory",
 ]

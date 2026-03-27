@@ -54,6 +54,12 @@ class GitAppService:
             except Exception:
                 pass
 
+    def _get_working_directory(self) -> str:
+        """从配置中获取工作目录"""
+        if self._config.working_directory:
+            return self._config.working_directory.path
+        return "."  # 默认当前目录
+
     def _get_base_url(self) -> Optional[str]:
         """从配置中获取base_url"""
         if self._config.server_address and self._config.server_address.base_url:
@@ -222,6 +228,9 @@ class GitAppService:
         # 检查是否有远程服务器配置
         base_url = self._get_base_url()
         
+        # 获取工作目录
+        working_dir = self._get_working_directory()
+        
         if base_url:
             # 使用远程沙盒执行git clone命令
             client = self._get_remote_client()
@@ -233,6 +242,7 @@ class GitAppService:
             import sys
             print(f"[DEBUG] 准备执行git clone命令...", file=sys.stderr)
             print(f"[DEBUG]   base_url: {base_url}", file=sys.stderr)
+            print(f"[DEBUG]   working_directory: {working_dir}", file=sys.stderr)
             
             clone_cmd = ["git", "clone"]
             if command.branch:
@@ -242,13 +252,25 @@ class GitAppService:
             if command.recursive:
                 clone_cmd.append("--recursive")
             clone_cmd.append(command.url)
+            
+            # 如果指定了目标目录，则使用；否则使用工作目录
             if command.target_dir:
-                clone_cmd.append(command.target_dir)
+                # 目标目录相对于工作目录
+                target_path = command.target_dir
+            else:
+                # 默认使用仓库名作为目标目录（相对于工作目录）
+                target_path = command.url.split("/")[-1].replace(".git", "")
+            
+            clone_cmd.append(target_path)
             
             print(f"[DEBUG]   命令: {' '.join(clone_cmd)}", file=sys.stderr)
             
-            # 执行远程命令 - 需要将command和args组合成完整的命令
-            full_command = " ".join(clone_cmd)
+            # 执行远程命令 - 在工作目录下执行git clone
+            # 方式: cd working_dir && git clone ...
+            if working_dir and working_dir != ".":
+                full_command = f"cd {working_dir} && {' '.join(clone_cmd)}"
+            else:
+                full_command = " ".join(clone_cmd)
             
             import sys
             print(f"[DEBUG] 执行远程命令: '{full_command}'", file=sys.stderr)
@@ -271,9 +293,9 @@ class GitAppService:
                 
                 if command_output.exit_code == 0:
                     # 克隆成功
-                    cloned_path = command.target_dir or command.url.split("/")[-1].replace(".git", "")
+                    cloned_path = target_path
                     success_result = CloneResult.success(
-                        message=f"成功克隆仓库到: {cloned_path}",
+                        message=f"成功克隆仓库到: {cloned_path}\n当前工作目录: {working_dir}",
                         cloned_path=cloned_path,
                         remote_url=command.url,
                         branch=command.branch or "main",

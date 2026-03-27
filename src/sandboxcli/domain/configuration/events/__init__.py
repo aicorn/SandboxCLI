@@ -1,2 +1,6 @@
 """配置上下文领域事件"""
-# 配置上下文暂无特定领域事件
+from .working_directory_changed_event import WorkingDirectoryChangedEvent
+
+__all__ = [
+    "WorkingDirectoryChangedEvent",
+]

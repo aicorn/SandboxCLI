@@ -1,6 +1,6 @@
 # SandboxCLI DDD 设计文档
 
-> **版本更新说明**：根据最新需求文档，增加了指令超时时验证远程沙盒服务连接性的功能设计。
+> **版本更新说明**：根据最新需求文档，增加了工作目录(WorkingDirectory)概念，用于统一管理Git操作和命令执行的工作目录。
 
 ## 1. 战略设计
 
@@ -72,6 +72,8 @@ SandboxCLI 是一个远程沙盒系统控制工具，用户通过 CLI 客户端�
 | SSH密钥 | SSHKey | SSH认证所需的私钥内容或路径 |
 | Git用户名 | GitUsername | Git操作时的用户名 |
 | Git邮箱 | GitEmail | Git操作时的邮箱 |
+| **工作目录** | **WorkingDirectory** | **CLI操作的工作目录，Git操作和命令执行的基准目录，默认值为"."** |
+| **工作目录变更事件** | **WorkingDirectoryChangedEvent** | **工作目录被修改时触发的事件** |
 
 #### 指令上下文 (Command Context)
 
@@ -94,6 +96,7 @@ SandboxCLI 是一个远程沙盒系统控制工具，用户通过 CLI 客户端�
 | 克隆结果 | CloneResult | 克隆操作的结果 |
 | **清理操作** | **CleanupOperation** | **清理Git仓库的操作（如清理未跟踪文件、删除分支等）** |
 | **清理结果** | **CleanupResult** | **清理操作的结果** |
+| **工作目录变更** | **WorkingDirectoryChanged** | **工作目录变更操作** |
 
 #### 连接上下文 (Connection Context)
 
@@ -129,6 +132,7 @@ SandboxCLI 是一个远程沙盒系统控制工具，用户通过 CLI 客户端�
 | **GitAuthType** | **Git认证方式（SSH/HTTPS/None）** |
 | **SSHKey** | **SSH私钥** |
 | **GitCredential** | **Git认证凭据（用户名+邮箱）** |
+| **WorkingDirectory** | **工作目录配置（路径、默认值"."）** |
 
 #### Aggregate
 
@@ -139,6 +143,7 @@ Config Aggregate (Aggregate Root)
     ├── ServerAddress
     ├── Timeout
     ├── SandboxType
+    ├── WorkingDirectory (工作目录，默认值".")
     └── GitConfig (Value Object)
         ├── gitRepoUrl: GitRepoUrl
         ├── gitAuthType: GitAuthType
@@ -152,6 +157,26 @@ Config Aggregate (Aggregate Root)
 |---------|------|
 | ConfigService | 配置的管理和验证 |
 | GitConfigValidator | Git配置的验证 |
+
+#### WorkingDirectory 设计
+
+**WorkingDirectory (Value Object)**:
+
+| 字段 | 类型 | 说明 | 默认值 |
+|------|------|------|--------|
+| path | str | 工作目录路径 | "." |
+| isDefault | bool | 是否为默认路径 | true |
+
+**设计原则**：
+- WorkingDirectory 是不可变的 Value Object
+- 默认值为 "."（当前目录）
+- 用户可以通过配置命令设置工作目录
+- 当工作目录变更时，系统应提示用户当前工作目录的变化
+- Git操作和命令执行都以工作目录为基准
+
+**配置命令新增选项**：
+- `sandboxcli config set --working-directory <path>`: 设置工作目录
+- `sandboxcli config get`: 获取配置时会显示当前工作目录
 
 ### 2.2 指令上下文 (Command Context)
 
@@ -208,6 +233,7 @@ CommandOutput 是命令执行结果的核心 Value Object，必须包含实际�
 | CommandExecutedEvent | 命令执行事件 |
 | CommandFailedEvent | 命令执行失败事件 |
 | **CommandTimeoutEvent** | **指令超时事件** |
+| **WorkingDirectoryChangedEvent** | **工作目录变更事件（配置上下文中触发）** |
 
 ### 指令超时处理设计
 
@@ -257,6 +283,42 @@ CommandOutput 是命令执行结果的核心 Value Object，必须包含实际�
 | TIMEOUT | 超时（原因未知） |
 | TIMEOUT_WITH_CONNECTION_FAIL | 超时，且连接检测失败 |
 | TIMEOUT_WITH_CONNECTION_OK | 超时，但连接正常（可能是命令本身执行慢） |
+
+#### WorkingDirectoryChangedEvent 设计
+
+**WorkingDirectoryChangedEvent（领域事件）**:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| oldPath | str | 旧的工作目录路径 |
+| newPath | str | 新的工作目录路径 |
+| changedAt | Timestamp | 变更时间 |
+| changedBy | str | 变更操作者（用户/系统） |
+
+**工作目录变更流程**：
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   工作目录变更流程                                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  1. 用户调用 config set --working-directory <path>             │
+│     │                                                           │
+│     ▼                                                            │
+│  2. ConfigService 验证新路径有效性                               │
+│     │                                                           │
+│     ▼                                                            │
+│  3. 更新 Config Aggregate 中的 WorkingDirectory                │
+│     │                                                           │
+│     ▼                                                            │
+│  4. 触发 WorkingDirectoryChangedEvent                          │
+│     │                                                           │
+│     ▼                                                            │
+│  5. 通知用户当前工作目录的变化                                   │
+│     │  - 显示: "工作目录已从 {oldPath} 变更为 {newPath}"          │
+│     │                                                           │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 #### Connection Context 新增服务
 
@@ -349,10 +411,11 @@ CleanupOperation Aggregate (Aggregate Root)
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | url | GitRepoUrl | 远程仓库URL |
-| targetDir | str | 目标目录（可选） |
+| targetDir | str | 目标目录（可选，默认使用配置中的工作目录） |
 | branch | str | 指定分支（可选） |
 | depth | int | 浅克隆深度（可选） |
 | recursive | bool | 是否递归克隆子模块 |
+| **workingDirectory** | **str** | **工作目录（用于确定克隆后的仓库目录，默认为配置的工作目录）** |
 
 **CloneResult (Value Object)**:
 
@@ -495,15 +558,17 @@ src/
 │   │   │   ├── server_address.py
 │   │   │   ├── timeout.py
 │   │   │   ├── sandbox_type.py
-│   │   │   ├── git_config.py       # 新增：Git配置
-│   │   │   ├── git_repo_url.py     # 新增：Git仓库URL
-│   │   │   ├── git_auth_type.py    # 新增：Git认证方式
-│   │   │   ├── ssh_key.py          # 新增：SSH密钥
-│   │   │   └── git_credential.py   # 新增：Git凭据
+│   │   │   ├── git_config.py       # Git配置
+│   │   │   ├── git_repo_url.py     # Git仓库URL
+│   │   │   ├── git_auth_type.py    # Git认证方式
+│   │   │   ├── ssh_key.py          # SSH密钥
+│   │   │   ├── git_credential.py   # Git凭据
+│   │   │   └── working_directory.py # 新增：工作目录
 │   │   ├── aggregates/
 │   │   │   └── config_aggregate.py
 │   │   ├── events/
-│   │   │   └── __init__.py
+│   │   │   ├── __init__.py
+│   │   │   └── working_directory_changed_event.py  # 新增：工作目录变更事件
 │   │   └── services/
 │   │       ├── config_service.py
 │   │       └── git_config_validator.py
@@ -704,22 +769,33 @@ src/
 │  1. 用户调用 git clone 命令                                      │
 │     │                                                           │
 │     ▼                                                            │
-│  2. GitAppService 获取 GitConfig (从 Configuration Context)    │
+│  2. GitAppService 获取 GitConfig 和 WorkingDirectory           │
 │     │                                                           │
 │     ▼                                                            │
-│  3. CloneService 创建 CloneOptions                              │
+│  3. CloneService 创建 CloneOptions                             │
+│     │  - targetDir: 如果未指定，则使用 workingDirectory        │
+│     │  - workingDirectory: 配置中的工作目录                    │
 │     │                                                           │
 │     ▼                                                            │
-│  4. 通过 Remote Adapter 执行 git clone 指令                     │
+│  4. 通过 Remote Adapter 执行 git clone 指令                    │
+│     │  - 指令在工作目录下执行 (cd workingDirectory && git clone)│
 │     │                                                           │
 │     ▼                                                            │
-│  5. 返回 CloneResult                                            │
+│  5. 返回 CloneResult                                           │
+│     │  - clonedPath: 克隆到的路径（相对于工作目录）              │
 │     │                                                           │
 │     ▼                                                            │
-│  6. 触发 RepositoryClonedEvent 或 CloneFailedEvent             │
-│                                                                  │
+│  6. 触发 RepositoryClonedEvent 或 CloneFailedEvent            │
+│     │  - 提示用户当前工作目录的变化                                │
+│     │                                                           │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+**工作目录在Git克隆中的作用**：
+
+1. **默认目标目录**：当用户未指定 `-d/--target-dir` 时，仓库会被克隆到工作目录下
+2. **执行上下文**：git clone 指令会在工作目录下执行
+3. **提示用户**：克隆成功后，提示用户当前工作目录和仓库路径的信息
 
 ---
 
@@ -882,6 +958,7 @@ Exit Code: 0
 | timeout | string | 超时时间 | 格式如 "30s" |
 | username | string | 用户名 | 可为null |
 | sandbox_type | string | 沙盒类型 | 默认 "aio" |
+| **working_directory** | **string** | **工作目录** | **默认 "."** |
 | git_config | object | Git配置 | 包含仓库URL、认证方式等 |
 | items | array | 自定义配置项 | 用户通过 --key/--value 添加的额外配置 |
 
@@ -909,6 +986,7 @@ Exit Code: 0
 - `--key`: 自定义配置键
 - `--value`: 自定义配置值
 - `--base-url`: AIO Sandbox HTTP API 地址 (如 http://your-aio-server:8080)
+- `--working-directory`: 工作目录 (默认值为 ".")
 
 `config set-git` 命令选项：
 - `--url`: Git仓库URL
@@ -1033,6 +1111,7 @@ sandboxcli git clean --type branches
 | server_address | str | 是 | 服务器地址 | "" |
 | server_port | int | 是 | 服务器端口 | 8080 |
 | timeout | int | 否 | 超时时间（秒） | 30 |
+| **working_directory** | **str** | **否** | **工作目录** | **"."** |
 | git_repo_url | str | 否 | 默认Git仓库URL | "" |
 | git_auth_type | str | 否 | Git认证方式 | "none" |
 | git_ssh_key_path | str | 否 | SSH密钥文件路径 | "" |

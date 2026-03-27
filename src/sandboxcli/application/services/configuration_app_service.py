@@ -126,6 +126,10 @@ class ConfigurationAppService:
             if result.is_failure():
                 return result
 
+        if command.has_working_directory_update():
+            # 使用 ConfigAggregate 的方法更新工作目录，会触发事件
+            self._config.update_working_directory(command.working_directory)
+
         if command.has_custom_config_update():
             self._config.update_item(command.config_key, command.config_value)
 

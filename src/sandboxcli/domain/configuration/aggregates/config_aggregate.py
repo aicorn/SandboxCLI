@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional
 
 from ..entities.config import Config
 from ..value_objects import ConfigItem
+from ..events.working_directory_changed_event import WorkingDirectoryChangedEvent
 
 
 class ConfigAggregate:
@@ -10,6 +11,7 @@ class ConfigAggregate:
 
     def __init__(self, config: Config):
         self._config = config
+        self._pending_events: List[WorkingDirectoryChangedEvent] = []
 
     @property
     def config(self) -> Config:
@@ -20,6 +22,11 @@ class ConfigAggregate:
     def config_id(self) -> str:
         """获取配置ID"""
         return self._config.id
+
+    @property
+    def pending_events(self) -> List[WorkingDirectoryChangedEvent]:
+        """获取待处理的事件"""
+        return self._pending_events
 
     def get_all_items(self) -> List[ConfigItem]:
         """获取所有配置项"""
@@ -37,6 +44,36 @@ class ConfigAggregate:
         """移除配置项"""
         return self._config.remove_item(key)
 
+    def update_working_directory(self, path: str) -> WorkingDirectoryChangedEvent:
+        """更新工作目录
+
+        Args:
+            path: 新的工作目录路径
+
+        Returns:
+            WorkingDirectoryChangedEvent 事件
+        """
+        old_path = self._config.get_working_directory_path()
+        self._config.update_working_directory(path)
+        new_path = self._config.get_working_directory_path()
+
+        # 创建并存储事件
+        event = WorkingDirectoryChangedEvent.create(
+            old_path=old_path,
+            new_path=new_path,
+            changed_by="user"
+        )
+        self._pending_events.append(event)
+        return event
+
+    def get_working_directory(self) -> str:
+        """获取当前工作目录
+
+        Returns:
+            工作目录路径
+        """
+        return self._config.get_working_directory_path()
+
     def create_snapshot(self) -> Dict:
         """创建配置快照"""
         return self._config.to_dict()
@@ -50,6 +87,8 @@ class ConfigAggregate:
             self._config.update_timeout(int(snapshot["timeout"].rstrip("s")))
         if "username" in snapshot and snapshot["username"]:
             self._config.update_username(snapshot["username"])
+        if "working_directory" in snapshot and snapshot["working_directory"]:
+            self._config.update_working_directory(snapshot["working_directory"])
         if "items" in snapshot:
             for item in snapshot["items"]:
                 self._config.set_item(item["key"], item["value"], item.get("description"))

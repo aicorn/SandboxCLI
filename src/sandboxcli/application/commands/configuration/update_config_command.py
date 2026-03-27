@@ -14,6 +14,7 @@ class UpdateConfigCommand(BaseModel):
     config_key: Optional[str] = None
     config_value: Optional[str] = None
     base_url: Optional[str] = None  # AIO Sandbox HTTP API 地址
+    working_directory: Optional[str] = None  # 工作目录
 
     model_config = {"frozen": True}
 
@@ -32,6 +33,10 @@ class UpdateConfigCommand(BaseModel):
     def has_timeout_update(self) -> bool:
         """判断是否有超时更新"""
         return self.timeout is not None
+
+    def has_working_directory_update(self) -> bool:
+        """判断是否有工作目录更新"""
+        return self.working_directory is not None
 
     def has_custom_config_update(self) -> bool:
         """判断是否有自定义配置更新"""
