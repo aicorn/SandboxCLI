@@ -1,10 +1,11 @@
 """Git CLI命令"""
 import click
 
-from sandboxcli.application.commands.git import CloneRepositoryCommand, PullCodeCommand, SwitchBranchCommand
+from sandboxcli.application.commands.git import CleanRepositoryCommand, CloneRepositoryCommand, PullCodeCommand, SwitchBranchCommand
 from sandboxcli.application.queries.git import GetBranchesQuery, GetGitLogQuery, GetGitStatusQuery
 from sandboxcli.application.services.git_app_service import GitAppService
 from sandboxcli.interfaces.cli.presenter.output_formatter import OutputFormatter
+from sandboxcli.domain.git.value_objects import CleanupType
 
 # 创建应用服务实例
 _git_service = GitAppService()
@@ -118,6 +119,70 @@ def clone_repository(url: str, target_dir: str, branch: str, depth: int, recursi
     
     clone_result = result.value
     click.echo(f"Successfully cloned to: {clone_result.cloned_path}")
+
+
+@git_group.command(name="clean")
+@click.option(
+    "--type", "-t",
+    type=click.Choice([t.value for t in CleanupType], case_sensitive=False),
+    default=CleanupType.CLEAN_WORKSPACE.value,
+    help="清理类型: workspace(工作区), branches(已合并分支), tags(标签), all(全部)"
+)
+@click.option("--force", "-f", is_flag=True, help="强制执行（跳过确认）")
+@click.option("--repo-path", default=".", help="仓库路径")
+def clean_repository(type: str, force: bool, repo_path: str):
+    """清理Git仓库
+    
+    清理Git仓库中的未跟踪文件、已合并的本地分支或标签。
+    
+    清理类型:
+        - workspace: 清理未跟踪的文件和目录
+        - branches: 删除已合并到当前分支的本地分支
+        - tags: 删除本地标签
+        - all: 清理所有
+    
+    示例:
+        sandboxcli git clean --type workspace --force
+        sandboxcli git clean --type branches
+        sandboxcli git clean --type all
+    """
+    # 转换清理类型
+    cleanup_type = CleanupType(type)
+    
+    command = CleanRepositoryCommand(
+        cleanup_type=cleanup_type,
+        force=force,
+        repo_path=repo_path,
+    )
+    
+    # 调用应用服务执行清理
+    result = _git_service.execute_clean(command)
+    
+    if result.is_failure():
+        click.echo(f"Error: {result.error}", err=True)
+        raise click.ClickException(result.error)
+    
+    clean_result = result.value
+    
+    # 输出清理结果
+    click.echo(clean_result.message)
+    
+    if clean_result.cleaned_files:
+        click.echo(f"\n已清理的文件/目录 ({len(clean_result.cleaned_files)}):")
+        for f in clean_result.cleaned_files[:10]:  # 最多显示10个
+            click.echo(f"  - {f}")
+        if len(clean_result.cleaned_files) > 10:
+            click.echo(f"  ... 还有 {len(clean_result.cleaned_files) - 10} 个")
+    
+    if clean_result.deleted_branches:
+        click.echo(f"\n已删除的分支 ({len(clean_result.deleted_branches)}):")
+        for b in clean_result.deleted_branches:
+            click.echo(f"  - {b}")
+    
+    if clean_result.deleted_tags:
+        click.echo(f"\n已删除的标签 ({len(clean_result.deleted_tags)}):")
+        for t in clean_result.deleted_tags:
+            click.echo(f"  - {t}")
 
 
 __all__ = ["git_group"]

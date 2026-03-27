@@ -10,7 +10,7 @@ SandboxCLI 是一个远程沙盒系统控制工具，用户通过 CLI 客户端�
 
 - **配置管理**：CLI 工具的配置查看与修改，包括Git相关配置
 - **指令系统**：远程命令执行（在沙盒系统内执行指令）
-- **Git 管理**：Git 版本控制操作（在沙盒系统内执行 git 指令，包括克隆）
+- **Git 管理**：Git 版本控制操作（在沙盒系统内执行 git 指令，包括克隆、清理）
 - **连接管理**：与远程沙盒的连接维护
 
 ### 1.2 Bounded Contexts 划分
@@ -21,7 +21,7 @@ SandboxCLI 是一个远程沙盒系统控制工具，用户通过 CLI 客户端�
 |--------|--------|------|--------|
 | 配置上下文 | Configuration Context | CLI 配置的查看、修改、交互式修改，包括Git配置 | 支撑域 |
 | 指令上下文 | Command Context | 远程指令执行 | 核心域 |
-| Git 上下文 | Git Context | Git 状态、日志、分支、代码拉取、仓库克隆 | 核心域 |
+| Git 上下文 | Git Context | Git 状态、日志、分支、代码拉取、仓库克隆、仓库清理 | 核心域 |
 | 连接上下文 | Connection Context | 与远程沙盒的连接建立、维护、通信 | 支撑域 |
 
 ### 1.3 Context Map
@@ -92,6 +92,8 @@ SandboxCLI 是一个远程沙盒系统控制工具，用户通过 CLI 客户端�
 | 仓库 | Repository | Git 仓库 |
 | 克隆操作 | CloneOperation | 克隆远程仓库到本地 |
 | 克隆结果 | CloneResult | 克隆操作的结果 |
+| **清理操作** | **CleanupOperation** | **清理Git仓库的操作（如清理未跟踪文件、删除分支等）** |
+| **清理结果** | **CleanupResult** | **清理操作的结果** |
 
 #### 连接上下文 (Connection Context)
 
@@ -288,7 +290,8 @@ CommandOutput 是命令执行结果的核心 Value Object，必须包含实际�
 | Repository | RepoPath | Git 仓库 |
 | Branch | BranchName | Git 分支 |
 | Commit | CommitHash | Git 提交 |
-| **CloneOperation** | **OperationId** | **Git仓库克隆操作** |
+| CloneOperation | OperationId | Git仓库克隆操作 |
+| CleanupOperation | OperationId | Git仓库清理操作 |
 
 #### Value Objects
 
@@ -297,8 +300,10 @@ CommandOutput 是命令执行结果的核心 Value Object，必须包含实际�
 | GitStatus | Git 状态（工作区、暂存区状态） |
 | GitLogEntry | 单条 Git 日志 |
 | BranchInfo | 分支信息 |
-| **CloneResult** | **克隆操作结果** |
-| **CloneOptions** | **克隆选项（URL、目录、深度等）** |
+| CloneResult | 克隆操作结果 |
+| CloneOptions | 克隆选项（URL、目录、深度等） |
+| CleanupResult | 清理操作结果 |
+| CleanupOptions | 清理选项（清理类型、是否强制等） |
 
 #### Aggregates
 
@@ -319,6 +324,11 @@ CloneOperation Aggregate (Aggregate Root)
 ├── CloneOperation (Entity, Root)
 ├── options: CloneOptions (Value Object)
 └── result: CloneResult (Value Object)
+
+CleanupOperation Aggregate (Aggregate Root)
+├── CleanupOperation (Entity, Root)
+├── options: CleanupOptions (Value Object)
+└── result: CleanupResult (Value Object)
 ```
 
 #### Domain Events
@@ -327,8 +337,10 @@ CloneOperation Aggregate (Aggregate Root)
 |-------|------|
 | BranchSwitchedEvent | 分支切换事件 |
 | CodePulledEvent | 代码拉取事件 |
-| **RepositoryClonedEvent** | **仓库克隆成功事件** |
-| **CloneFailedEvent** | **仓库克隆失败事件** |
+| RepositoryClonedEvent | 仓库克隆成功事件 |
+| CloneFailedEvent | 仓库克隆失败事件 |
+| **RepositoryCleanedEvent** | **仓库清理成功事件** |
+| **CleanupFailedEvent** | **仓库清理失败事件** |
 
 #### Git克隆功能设计
 
@@ -350,6 +362,75 @@ CloneOperation Aggregate (Aggregate Root)
 | message | str | 结果消息 |
 | clonedPath | str | 克隆到的本地路径 |
 | commitHash | str | 最新提交哈希（成功时） |
+
+#### Git清理功能设计
+
+**CleanupOptions (Value Object)**:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| cleanupType | CleanupType | 清理类型枚举 |
+| force | bool | 是否强制执行（跳过确认） |
+| repoPath | str | 仓库路径（可选，默认当前目录） |
+
+**CleanupType (枚举)**:
+
+| 值 | 说明 |
+|----|------|
+| CLEAN_WORKSPACE | 清理工作区（删除未跟踪文件） |
+| CLEAN_BRANCHES | 清理已合并的本地分支 |
+| CLEAN_TAGS | 清理本地标签 |
+| CLEAN_ALL | 清理所有（工作区+分支+标签） |
+
+**CleanupResult (Value Object)**:
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| success | bool | 是否成功 |
+| message | str | 结果消息 |
+| cleanedFiles | List[str] | 已清理的文件列表 |
+| deletedBranches | List[str] | 已删除的分支列表 |
+| deletedTags | List[str] | 已删除的标签列表 |
+
+**CleanupOperation Aggregate 设计**:
+
+```python
+class CleanupOperation(Aggregate Root):
+    operationId: OperationId
+    cleanupType: CleanupType
+    options: CleanupOptions
+    result: CleanupResult
+    startedAt: Timestamp
+    completedAt: Optional[Timestamp]
+```
+
+**Git清理流程**:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Git清理流程                                   │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  1. 用户调用 git clean 命令                                      │
+│     │                                                           │
+│     ▼                                                            │
+│  2. GitAppService 获取 CleanupOptions                           │
+│     │                                                           │
+│     ▼                                                            │
+│  3. CleanupService 执行清理操作                                 │
+│     │                                                           │
+│     ├── git clean -fd (清理未跟踪文件)                           │
+│     ├── git branch -d <branch> (删除已合并分支)                  │
+│     └── git tag -d <tag> (删除本地标签)                          │
+│     │                                                           │
+│     ▼                                                            │
+│  4. 返回 CleanupResult                                           │
+│     │                                                           │
+│     ▼                                                            │
+│  5. 触发 RepositoryCleanedEvent 或 CleanupFailedEvent          │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ### 2.4 连接上下文 (Connection Context)
 
@@ -864,6 +945,7 @@ Exit Code: 0
 | 切换分支 | `sandboxcli git switch <branch_name>` | 切换到指定分支 |
 | 拉取代码 | `sandboxcli git pull` | 从远程仓库拉取最新代码 |
 | 克隆仓库 | `sandboxcli git clone <url>` | 克隆远程Git仓库到本地 |
+| **清理仓库** | **`sandboxcli git clean`** | **清理Git仓库（未跟踪文件、已合并分支等）** |
 
 **Git 操作选项：**
 
@@ -897,6 +979,11 @@ Exit Code: 0
 - `--recursive/--no-recursive`: 是否递归克隆子模块（默认 False）
 - `--use-config-git/--no-use-config-git`: 是否使用配置中的Git凭据（默认 True）
 
+`git clean` 选项：
+- `--type/-t`: 清理类型 (workspace/branches/tags/all)
+- `--force/-f`: 强制执行（跳过确认）
+- `--repo-path`: 仓库路径（默认 "."）
+
 ### 6.4 指令使用示例
 
 ```bash
@@ -920,6 +1007,8 @@ sandboxcli git branch --no-remote
 sandboxcli git switch develop --create
 sandboxcli git pull --rebase
 sandboxcli git clone https://github.com/user/repo.git -d /tmp/repo -b main --depth 1
+sandboxcli git clean --type workspace --force
+sandboxcli git clean --type branches
 ```
 
 ---

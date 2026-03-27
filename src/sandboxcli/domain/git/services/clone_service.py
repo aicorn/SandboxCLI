@@ -113,7 +113,7 @@ class CloneService:
         """
         # 验证配置
         validate_result = CloneService.validate_git_config(config)
-        if not validate_result.is_success():
+        if not validate_result.is_success:
             return Result.fail(validate_result.error)
         
         # 确定URL

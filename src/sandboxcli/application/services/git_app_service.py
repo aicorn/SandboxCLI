@@ -2,14 +2,14 @@
 from typing import Dict, List, Optional, TYPE_CHECKING
 
 from ...domain.configuration.value_objects import GitConfig
-from ...domain.git import CloneService, GitService, RepositoryAggregate
-from ...domain.git.entities import CloneOperation
-from ...domain.git.value_objects import CloneResult
+from ...domain.git import CleanupService, CloneService, GitService, RepositoryAggregate
+from ...domain.git.entities import CleanupOperation, CloneOperation
+from ...domain.git.value_objects import CleanupResult, CloneResult
 from ...domain.shared import Result
 from ...domain.command import CommandInput
 from ...infrastructure.persistence.config.config_repository import ConfigRepository
 from ...infrastructure.remote.adapter.factory import RemoteAdapterFactory
-from ..commands.git import CloneRepositoryCommand, PullCodeCommand, SwitchBranchCommand
+from ..commands.git import CleanRepositoryCommand, CloneRepositoryCommand, PullCodeCommand, SwitchBranchCommand
 from ..queries.git import GetBranchesQuery, GetGitLogQuery, GetGitStatusQuery
 
 if TYPE_CHECKING:
@@ -23,6 +23,7 @@ class GitAppService:
         self._current_repo: Optional[RepositoryAggregate] = None
         self._git_config: Optional[GitConfig] = None
         self._clone_operation: Optional[CloneOperation] = None
+        self._cleanup_operation: Optional[CleanupOperation] = None
         self._config_repository = ConfigRepository()
         self._config = self._config_repository.load()
         self._remote_client: Optional["RemoteAdapter"] = None
@@ -63,7 +64,7 @@ class GitAppService:
         """从配置中获取超时时间"""
         if self._config.timeout:
             return self._config.timeout.seconds
-        return 30
+        return 300  # 默认5分钟，git clone可能需要更长时间
 
     def _get_remote_client(self) -> Optional["RemoteAdapter"]:
         """获取或创建远程客户端"""
@@ -229,6 +230,10 @@ class GitAppService:
                 return Result.fail("无法连接到沙盒服务器")
             
             # 构建git clone命令
+            import sys
+            print(f"[DEBUG] 准备执行git clone命令...", file=sys.stderr)
+            print(f"[DEBUG]   base_url: {base_url}", file=sys.stderr)
+            
             clone_cmd = ["git", "clone"]
             if command.branch:
                 clone_cmd.extend(["--branch", command.branch])
@@ -240,15 +245,29 @@ class GitAppService:
             if command.target_dir:
                 clone_cmd.append(command.target_dir)
             
-            # 执行远程命令
-            command_input = CommandInput(
-                command="git",
-                args=clone_cmd[1:],  # 去掉"git"，因为execute_command会添加
+            print(f"[DEBUG]   命令: {' '.join(clone_cmd)}", file=sys.stderr)
+            
+            # 执行远程命令 - 需要将command和args组合成完整的命令
+            full_command = " ".join(clone_cmd)
+            
+            import sys
+            print(f"[DEBUG] 执行远程命令: '{full_command}'", file=sys.stderr)
+            
+            command_input_for_remote = CommandInput(
+                command=full_command,
+                args=[],  # args已经包含在command中了
                 working_directory=None,
             )
             
             try:
-                command_output = client.execute_command(command_input)
+                command_output = client.execute_command(command_input_for_remote)
+                
+                # 添加诊断日志 - 输出到stderr以便用户可以看到
+                import sys
+                print(f"[DEBUG] git clone command output:", file=sys.stderr)
+                print(f"[DEBUG]   stdout: '{command_output.stdout}'", file=sys.stderr)
+                print(f"[DEBUG]   stderr: '{command_output.stderr}'", file=sys.stderr)
+                print(f"[DEBUG]   exit_code: {command_output.exit_code}", file=sys.stderr)
                 
                 if command_output.exit_code == 0:
                     # 克隆成功
@@ -273,3 +292,179 @@ class GitAppService:
             # 没有配置base_url，无法执行远程命令
             operation.fail("No server address configured. Please configure sandbox server first.")
             return Result.fail("没有配置沙盒服务器地址，无法执行远程克隆命令")
+
+    def get_cleanup_operation(self) -> Optional[CleanupOperation]:
+        """获取当前清理操作"""
+        return self._cleanup_operation
+
+    def clean_repository(
+        self,
+        command: CleanRepositoryCommand,
+    ) -> Result[CleanupOperation]:
+        """清理仓库
+        
+        Args:
+            command: 清理仓库命令
+            
+        Returns:
+            Result: 清理操作结果
+        """
+        # 创建清理操作
+        operation = CleanupService.create_cleanup_operation(
+            cleanup_type=command.cleanup_type,
+            force=command.force,
+            repo_path=command.repo_path,
+        )
+        
+        self._cleanup_operation = operation
+        return Result.ok(operation)
+
+    def execute_clean(
+        self,
+        command: CleanRepositoryCommand,
+    ) -> Result[CleanupResult]:
+        """执行清理操作
+        
+        通过远程沙盒执行git clean命令
+        
+        Args:
+            command: 清理仓库命令
+            
+        Returns:
+            Result: 清理结果
+        """
+        # 先创建清理操作
+        clean_result = self.clean_repository(command)
+        if not clean_result.is_success:
+            return Result.fail(clean_result.error)
+        
+        operation = clean_result.value
+        
+        # 标记开始执行
+        operation.start()
+        
+        # 检查是否有远程服务器配置
+        base_url = self._get_base_url()
+        
+        if base_url:
+            # 使用远程沙盒执行git clean命令
+            client = self._get_remote_client()
+            
+            if not client:
+                return Result.fail("无法连接到沙盒服务器")
+            
+            cleaned_files = []
+            deleted_branches = []
+            deleted_tags = []
+            
+            # 根据清理类型执行不同的清理操作
+            try:
+                # 1. 清理工作区（删除未跟踪文件）
+                if command.is_workspace_cleanup:
+                    clean_cmd = f"cd {command.repo_path} && git clean -fd"
+                    if command.force:
+                        clean_cmd = f"cd {command.repo_path} && git clean -fdx"
+                    
+                    import sys
+                    print(f"[DEBUG] 执行工作区清理: '{clean_cmd}'", file=sys.stderr)
+                    
+                    command_input = CommandInput(
+                        command=clean_cmd,
+                        args=[],
+                        working_directory=None,
+                    )
+                    
+                    output = client.execute_command(command_input)
+                    
+                    import sys
+                    print(f"[DEBUG] clean output: exit_code={output.exit_code}, stdout='{output.stdout}', stderr='{output.stderr}'", file=sys.stderr)
+                    
+                    if output.exit_code == 0:
+                        # 解析输出 - git clean -fd 成功时不输出内容
+                        # 如果stdout有内容才解析
+                        if output.stdout and output.stdout.strip():
+                            cleaned_files = [line.strip() for line in output.stdout.split("\n") if line.strip()]
+                
+                # 2. 清理已合并的分支
+                if command.is_branches_cleanup:
+                    # 先获取已合并的分支列表
+                    merged_cmd = f"cd {command.repo_path} && git branch --merged"
+                    
+                    import sys
+                    print(f"[DEBUG] 获取已合并分支: '{merged_cmd}'", file=sys.stderr)
+                    
+                    command_input = CommandInput(
+                        command=merged_cmd,
+                        args=[],
+                        working_directory=None,
+                    )
+                    
+                    output = client.execute_command(command_input)
+                    
+                    if output.exit_code == 0 and output.stdout:
+                        branches = [b.strip() for b in output.stdout.split("\n") if b.strip() and not b.startswith("*")]
+                        # 保护分支
+                        protected = ["main", "master", "develop", "HEAD"]
+                        for branch in branches:
+                            if branch.lower() not in [b.lower() for b in protected]:
+                                # 删除分支
+                                delete_cmd = f"cd {command.repo_path} && git branch -d {branch}"
+                                delete_input = CommandInput(
+                                    command=delete_cmd,
+                                    args=[],
+                                    working_directory=None,
+                                )
+                                delete_output = client.execute_command(delete_input)
+                                if delete_output.exit_code == 0:
+                                    deleted_branches.append(branch)
+                
+                # 3. 清理标签
+                if command.is_tags_cleanup:
+                    # 先获取标签列表
+                    tags_cmd = f"cd {command.repo_path} && git tag -l"
+                    
+                    import sys
+                    print(f"[DEBUG] 获取标签列表: '{tags_cmd}'", file=sys.stderr)
+                    
+                    command_input = CommandInput(
+                        command=tags_cmd,
+                        args=[],
+                        working_directory=None,
+                    )
+                    
+                    output = client.execute_command(command_input)
+                    
+                    if output.exit_code == 0 and output.stdout:
+                        tags = [t.strip() for t in output.stdout.split("\n") if t.strip()]
+                        for tag in tags:
+                            # 删除标签
+                            delete_cmd = f"cd {command.repo_path} && git tag -d {tag}"
+                            delete_input = CommandInput(
+                                command=delete_cmd,
+                                args=[],
+                                working_directory=None,
+                            )
+                            delete_output = client.execute_command(delete_input)
+                            if delete_output.exit_code == 0:
+                                deleted_tags.append(tag)
+                
+                # 构建成功结果
+                result = CleanupService.create_success_result(
+                    cleaned_files=cleaned_files,
+                    deleted_branches=deleted_branches,
+                    deleted_tags=deleted_tags,
+                )
+                
+                operation.complete(result)
+                return Result.ok(result)
+                
+            except Exception as e:
+                import sys
+                print(f"[DEBUG] Exception during cleanup: type={type(e)}, message={str(e)}", file=sys.stderr)
+                error_msg = str(e) if str(e) else "未知错误"
+                operation.fail(error_msg)
+                return Result.fail(f"执行清理命令失败: {error_msg}")
+        else:
+            # 没有配置base_url，无法执行远程命令
+            operation.fail("No server address configured. Please configure sandbox server first.")
+            return Result.fail("没有配置沙盒服务器地址，无法执行远程清理命令")

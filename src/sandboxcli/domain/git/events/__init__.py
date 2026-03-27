@@ -61,4 +61,43 @@ class CloneFailedEvent(DomainEvent):
         return self.operation_id
 
 
-__all__ = ["BranchSwitchedEvent", "CodePulledEvent", "RepositoryClonedEvent", "CloneFailedEvent"]
+class RepositoryCleanedEvent(DomainEvent):
+    """仓库清理成功事件"""
+
+    operation_id: str
+    repo_path: str
+    cleanup_type: str
+    cleaned_files: list
+    deleted_branches: list
+    deleted_tags: list
+
+    def get_event_type(self) -> str:
+        return "RepositoryCleanedEvent"
+
+    def get_aggregate_id(self) -> str:
+        return self.operation_id
+
+
+class CleanupFailedEvent(DomainEvent):
+    """仓库清理失败事件"""
+
+    operation_id: str
+    repo_path: str
+    cleanup_type: str
+    error: str
+
+    def get_event_type(self) -> str:
+        return "CleanupFailedEvent"
+
+    def get_aggregate_id(self) -> str:
+        return self.operation_id
+
+
+__all__ = [
+    "BranchSwitchedEvent", 
+    "CodePulledEvent", 
+    "RepositoryClonedEvent", 
+    "CloneFailedEvent",
+    "RepositoryCleanedEvent",
+    "CleanupFailedEvent",
+]
