@@ -87,15 +87,20 @@ class OutputFormatter:
         # 简洁模式：只显示输出内容
         if not verbose:
             output_data = output.get("output")
+            
             if isinstance(output_data, dict):
                 stdout = output_data.get("stdout", "")
                 stderr = output_data.get("stderr", "")
                 exit_code = output_data.get("exit_code", 0)
 
                 # 根据设计文档：错误输出优先显示
+                # 注意：有些远程服务器将错误信息放在 stdout 中，需要同时检查
                 if stderr:
                     # 有 stderr 则显示 stderr
                     return stderr
+                elif stdout and exit_code != 0:
+                    # 如果没有 stderr 但有 stdout 且 exit_code 非0，说明错误信息在 stdout 中
+                    return stdout
                 elif exit_code != 0:
                     # 执行失败但没有 stderr 时，显示默认错误消息
                     return f"Command failed with exit code: {exit_code}"

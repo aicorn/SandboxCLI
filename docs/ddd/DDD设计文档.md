@@ -999,7 +999,108 @@ Exit Code: 127
 2. 当 `status` 为 `FAILED` 或 `exit_code != 0` 时，应优先显示 stderr 内容
 3. 当 `status` 为 `FAILED` 且无 stderr 时，应生成默认错误消息提示用户
 
-### 5.9 API 响应格式
+### 5.9 错误信息展示设计
+
+**需求**：在精简模式下执行命令失败时，需要显示具体的错误信息（如 `rmdir: failed to remove 'SandboxCLI': Directory not empty`），而不仅仅显示错误码，让用户能够像在本地执行一样清楚地看到错误原因。
+
+**本地命令执行行为分析**：
+
+本地执行命令时，错误信息会直接显示 stderr 内容，例如：
+
+```bash
+# 目录不为空
+$ rmdir SandboxCLI
+rmdir: failed to remove 'SandboxCLI': Directory not empty
+
+# 目录不存在
+$ rmdir 123
+rmdir: failed to remove '123': No such file or directory
+
+# 命令不存在
+$ invalid_command
+bash: line 1: invalid_command: command not found
+```
+
+**设计目标**：
+
+在精简模式下，命令执行失败时应该显示：
+1. stderr 中的具体错误信息（如果有）
+2. 错误信息格式与本地命令执行一致
+
+**CommandOutput 设计更新**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| stdout | str | 标准输出 |
+| stderr | str | 标准错误输出 |
+| exitCode | int | 退出码 |
+| hasOutput | bool | 是否有输出内容 |
+| **errorMessage** | **str** | **标准化错误信息（用于显示）** |
+
+**错误信息标准化处理**：
+
+为了统一显示格式，需要对 stderr 进行标准化处理：
+
+| 场景 | stderr 原始内容 | 标准化后显示 |
+|------|-----------------|---------------|
+| 目录不为空 | `rmdir: failed to remove 'SandboxCLI': Directory not empty` | 保持原样 |
+| 文件不存在 | `rmdir: failed to remove '123': No such file or directory` | 保持原样 |
+| 权限不足 | `rmdir: removing directory 'xxx': Permission denied` | 保持原样 |
+| 命令不存在 | `bash: line 1: invalid_command: command not found` | 保持原样 |
+| 无 stderr 但有错误码 | (空) | 生成错误信息 |
+
+**精简模式错误展示逻辑**：
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   精简模式错误展示流程                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  1. 命令执行完成                                                   │
+│     │                                                           │
+│     ▼                                                            │
+│  2. 检查执行状态和退出码                                           │
+│     │                                                           │
+│     ├── exit_code == 0 ──▶ 显示 stdout（如有）                     │
+│     │                                                           │
+│     └── exit_code != 0 ──▶ 进入错误处理流程                       │
+│     │                                                           │
+│     ▼                                                            │
+│  3. 错误处理流程                                                   │
+│     │                                                           │
+│     ├── stderr 有内容 ──▶ 直接显示 stderr                         │
+│     │                                                           │
+│     └── stderr 无内容 ──▶ 生成默认错误信息                         │
+│         │                                                        │
+│         └── "Command failed with exit code: X"                  │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**实现要点**：
+
+1. **领域层 (CommandOutput)**：
+   - stderr 字段必须包含实际的错误输出内容
+   - 如果 stderr 为空但 exit_code != 0，需要生成默认错误信息
+
+2. **接口层 (CLI)**：
+   - 精简模式下，当 exit_code != 0 时优先显示 stderr
+   - 如果 stderr 为空，则显示默认错误信息格式
+
+**更新后的精简模式输出示例**：
+
+```bash
+# 执行失败（stderr 有内容）
+$ sandboxcli command exec "rmdir SandboxCLI"
+rmdir: failed to remove 'SandboxCLI': Directory not empty
+
+# 执行失败（stderr 无内容）
+$ sandboxcli command exec "exit 1"
+
+Command failed with exit code: 1
+```
+
+### 5.10 API 响应格式
 
 **Shell Exec 响应格式**：
 

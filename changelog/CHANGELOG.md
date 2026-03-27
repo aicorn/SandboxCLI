@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `--verbose` / `-v` option to `command exec` and `command run` commands for detailed output
 - Added `has_output()` method to `CommandOutput` value object
 - DDD design document now includes command error display design with ExecutionStatus states
+- Added `stderr` field to `ShellExecResponse` in protocol layer
+- Command error display now shows error message in concise mode (like local command execution)
 
 ### Fixed
 - Fixed command execution output not displaying results (API response format parsing issue)
@@ -44,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `Execution` entity missing `mark_timeout()` method
 - Fixed `CommandAppService` not correctly handling command execution errors (exit_code != 0)
 - Fixed command run with incorrect commands not showing error messages
+- Fixed concise mode not showing error message when stderr is empty but stdout contains error info
 
 ## [0.0.2] - 2026-03-25
 

@@ -41,6 +41,7 @@ class ShellExecRequest:
 class ShellExecResponse:
     """Shell 执行响应"""
     output: str = ""
+    stderr: str = ""
     exit_code: int = 0
 
     @classmethod
@@ -50,8 +51,13 @@ class ShellExecResponse:
         output = data.get("output")
         if output is None:
             output = ""
+        # 确保 stderr 不为 None，返回空字符串
+        stderr = data.get("stderr")
+        if stderr is None:
+            stderr = ""
         return cls(
             output=output,
+            stderr=stderr,
             exit_code=data.get("exit_code", 0),
         )
 
@@ -164,7 +170,7 @@ class SandboxProtocol:
         Returns:
             ShellExecResponse 对象
 
-        注意：响应格式为 {'success': True, 'data': {'output': ..., 'exit_code': ...}}
+        注意：响应格式为 {'success': True, 'data': {'output': ..., 'stderr': ..., 'exit_code': ...}}
         """
         # 获取 data 字段中的内容
         data_obj = data.get("data", data)  # 兼容两种格式：有 data 包装 或 直接是数据
@@ -174,8 +180,14 @@ class SandboxProtocol:
         if output is None:
             output = ""
 
+        # 确保 stderr 不为 None，返回空字符串
+        stderr = data_obj.get("stderr")
+        if stderr is None:
+            stderr = ""
+
         return ShellExecResponse(
             output=output,
+            stderr=stderr,
             exit_code=data_obj.get("exit_code", 0),
         )
 

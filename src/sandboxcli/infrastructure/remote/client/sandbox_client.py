@@ -94,7 +94,7 @@ class SandboxClient(RemoteAdapter):
 
             return CommandOutput(
                 stdout=result.output,
-                stderr="",
+                stderr=result.stderr,
                 exit_code=result.exit_code,
             )
         except httpx.HTTPError as e:
@@ -258,7 +258,7 @@ class SandboxAsyncClient(SandboxClient):
 
                 return CommandOutput(
                     stdout=result.output,
-                    stderr="",
+                    stderr=result.stderr,
                     exit_code=result.exit_code,
                 )
             except httpx.HTTPError as e:
