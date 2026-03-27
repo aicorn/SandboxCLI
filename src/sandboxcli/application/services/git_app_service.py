@@ -262,8 +262,78 @@ class GitAppService:
                 target_path = command.url.split("/")[-1].replace(".git", "")
             
             clone_cmd.append(target_path)
-            
-            print(f"[DEBUG]   命令: {' '.join(clone_cmd)}", file=sys.stderr)
+
+            # 检查是否需要使用SSH密钥
+            ssh_key_path = None
+            config = git_config or self._git_config
+            if config and config.auth_type.is_ssh() and config.ssh_key:
+                if config.ssh_key.key_content:
+                    # 密钥内容已经在配置中，直接写入远程沙盒
+                    try:
+                        # 写入SSH密钥到远程沙盒
+                        key_path = "/tmp/sandbox_git_key"
+                        key_content = config.ssh_key.key_content
+                        client.write_file(key_path, key_content)
+
+                        # 设置密钥文件权限
+                        chmod_cmd = f"chmod 600 {key_path}"
+                        command_input_chmod = CommandInput(
+                            command=chmod_cmd,
+                            args=[],
+                            working_directory=None,
+                        )
+                        client.execute_command(command_input_chmod)
+
+                        ssh_key_path = key_path
+                        print(f"[DEBUG] SSH密钥已写入远程沙盒: {key_path}", file=sys.stderr)
+                    except Exception as e:
+                        print(f"[DEBUG] 写入SSH密钥失败: {e}", file=sys.stderr)
+                elif config.ssh_key.key_path:
+                    # 密钥路径在本地，需要先读取内容再写入远程沙盒
+                    import os
+                    local_key_path = os.path.expanduser(config.ssh_key.key_path)
+                    if os.path.exists(local_key_path):
+                        try:
+                            # 读取本地密钥内容
+                            with open(local_key_path, 'r') as f:
+                                key_content = f.read()
+
+                            # 写入远程沙盒
+                            remote_key_path = "/tmp/sandbox_git_key"
+                            client.write_file(remote_key_path, key_content)
+
+                            # 设置密钥文件权限
+                            chmod_cmd = f"chmod 600 {remote_key_path}"
+                            command_input_chmod = CommandInput(
+                                command=chmod_cmd,
+                                args=[],
+                                working_directory=None,
+                            )
+                            client.execute_command(command_input_chmod)
+
+                            ssh_key_path = remote_key_path
+                            print(f"[DEBUG] 本地SSH密钥已复制到远程沙盒: {remote_key_path}", file=sys.stderr)
+                        except Exception as e:
+                            print(f"[DEBUG] 读取/写入SSH密钥失败: {e}", file=sys.stderr)
+                            # 尝试使用本地路径（可能沙盒能访问到）
+                            ssh_key_path = config.ssh_key.key_path
+                    else:
+                        # 密钥文件不存在，尝试直接使用路径
+                        ssh_key_path = config.ssh_key.key_path
+                        print(f"[DEBUG] 本地SSH密钥文件不存在: {local_key_path}", file=sys.stderr)
+
+            # 构建完整的git clone命令
+            full_command_parts = []
+
+            # 如果配置了SSH密钥，添加GIT_SSH_COMMAND
+            if ssh_key_path:
+                ssh_cmd = f"ssh -i {ssh_key_path} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+                full_command_parts.append(f"GIT_SSH_COMMAND='{ssh_cmd}'")
+
+            full_command_parts.extend(clone_cmd)
+            full_command = " ".join(full_command_parts)
+
+            print(f"[DEBUG]   命令: {full_command}", file=sys.stderr)
             
             # 执行远程命令 - 在工作目录下执行git clone
             # 方式: cd working_dir && git clone ...

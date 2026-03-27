@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - DDD design document now includes command error display design with ExecutionStatus states
 - Added `stderr` field to `ShellExecResponse` in protocol layer
 - Command error display now shows error message in concise mode (like local command execution)
+- **SSH key support for Git operations - SSH keys are now automatically copied to remote sandbox**
 
 ### Fixed
 - Fixed command execution output not displaying results (API response format parsing issue)

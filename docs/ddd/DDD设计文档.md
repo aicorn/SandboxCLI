@@ -1303,3 +1303,92 @@ sandboxcli git clean --type branches
 | 无认证 | "none" | 无 |
 | HTTPS用户名密码 | "https" | git_username, git_password |
 | SSH密钥 | "ssh" | git_ssh_key_path |
+
+---
+
+## 8. 问题分析与修复
+
+### 8.1 Git操作未使用SSH Key问题
+
+#### 问题描述
+
+当前 SandboxCLI 在执行 Git 操作（如 `git clone`）时，**没有使用配置中已设置的 SSH Key**。即使在 `GitConfig` 中正确配置了 `auth_type=SSH` 和 `ssh_key`，克隆操作仍然会失败或使用默认认证方式。
+
+#### 问题根因
+
+在 [`GitAppService.execute_clone()`](src/sandboxcli/application/services/git_app_service.py) 中，构建 git clone 命令时没有注入 SSH 认证配置：
+
+```python
+# 当前实现（缺少SSH配置）
+clone_cmd = ["git", "clone"]
+if command.branch:
+    clone_cmd.extend(["--branch", command.branch])
+# ... 直接执行命令，没有使用 ssh_key
+clone_cmd.append(command.url)
+```
+
+虽然 `GitConfig` 已经定义了：
+- `auth_type.is_ssh()` - 识别 SSH 认证方式
+- `ssh_key.is_empty()` - 检查是否配置了 SSH 密钥
+
+但执行时既没有设置 `GIT_SSH_COMMAND` 环境变量，也没有使用 `git config core.sshCommand` 配置 SSH 命令。
+
+#### 解决方案
+
+需要在执行 git 命令前进行 SSH 密钥配置：
+
+1. **读取 SSH 配置**：从 `git_config.ssh_key` 获取密钥内容或路径
+2. **写入密钥文件**：将私钥内容写入远程沙盒的临时文件（如 `/tmp/sandbox_git_key`）
+3. **配置 SSH 命令**：设置环境变量 `GIT_SSH_COMMAND` 或使用 `git config core.sshCommand`
+
+**实现方案**：
+
+```python
+# 在 git_app_service.py 的 execute_clone 方法中添加：
+
+def _build_git_ssh_command(self, ssh_key: SSHKey) -> str:
+    """构建 GIT_SSH_COMMAND 配置"""
+    if ssh_key.key_content:
+        # 将密钥写入临时文件
+        key_file = "/tmp/sandbox_git_key"
+        # ... 远程写入密钥内容
+        return f"ssh -i {key_file} -o StrictHostKeyChecking=no"
+    elif ssh_key.key_path:
+        return f"ssh -i {ssh_key.key_path} -o StrictHostKeyChecking=no"
+    return "ssh"  # 默认
+
+# 使用 GIT_SSH_COMMAND 执行 git clone
+full_command = f"GIT_SSH_COMMAND='{ssh_cmd}' git clone ..."
+```
+
+#### 涉及的修改范围
+
+| 层级 | 文件 | 修改内容 |
+|------|------|----------|
+| 应用层 | git_app_service.py | 在 execute_clone/pull_code 等方法中注入 SSH 配置 |
+| 领域层 | CloneService | 新增 build_git_ssh_command 方法 |
+| 基础设施层 | RemoteAdapter | 新增 write_file 方法（写入密钥到远程） |
+
+#### 相关领域模型更新
+
+**CloneOptions 新增字段**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| ssh_key | Optional[SSHKey] | SSH 密钥配置（用于克隆操作） |
+
+**GitAppService 新增方法**：
+
+| 方法 | 职责 |
+|------|------|
+| _prepare_ssh_key() | 准备SSH密钥（写入远程沙盒） |
+| _build_git_ssh_command() | 构建 GIT_SSH_COMMAND 字符串 |
+| _cleanup_ssh_key() | 清理临时密钥文件 |
+
+#### 认证方式对比
+
+| 认证方式 | 实现方式 | 需要的配置 |
+|----------|----------|------------|
+| SSH | 设置 GIT_SSH_COMMAND 环境变量 | ssh_key (key_path 或 key_content) |
+| HTTPS | 使用 git credential helper | credential (username, password) |
+| None | 直接使用（适用于公开仓库） | 无 |

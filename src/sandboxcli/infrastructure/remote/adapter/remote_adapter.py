@@ -75,6 +75,19 @@ class RemoteAdapter(ABC):
         """
         pass
 
+    @abstractmethod
+    def write_file(self, file_path: str, content: str) -> bool:
+        """写入文件到远程沙盒
+
+        Args:
+            file_path: 文件路径
+            content: 文件内容
+
+        Returns:
+            是否成功
+        """
+        pass
+
     def __enter__(self) -> "RemoteAdapter":
         """上下文管理器入口"""
         self.connect()

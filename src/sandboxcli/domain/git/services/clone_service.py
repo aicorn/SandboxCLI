@@ -1,8 +1,8 @@
 """Git克隆服务"""
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from ...shared import Result
-from ...configuration.value_objects import GitConfig
+from ...configuration.value_objects import GitConfig, SSHKey
 from ..entities import CloneOperation
 from ..value_objects import CloneOptions, CloneResult
 
@@ -203,3 +203,60 @@ class CloneService:
                 message=f"克隆失败: {error_output or output}",
                 error=error_output or output,
             )
+
+    @staticmethod
+    def build_git_ssh_command(ssh_key: SSHKey) -> str:
+        """构建 GIT_SSH_COMMAND 环境变量值
+
+        Args:
+            ssh_key: SSH密钥配置
+
+        Returns:
+            GIT_SSH_COMMAND 环境变量值
+        """
+        if ssh_key.is_empty():
+            return ""  # 没有配置SSH密钥
+
+        # SSH 命令选项
+        ssh_options = [
+            "-o StrictHostKeyChecking=no",  # 自动信任主机
+            "-o UserKnownHostsFile=/dev/null",  # 不使用known_hosts
+            "-o LogLevel=ERROR",  # 减少日志输出
+        ]
+
+        if ssh_key.key_content:
+            # 密钥内容 - 返回基本SSH命令（需要应用层先写入密钥文件）
+            key_path = "/tmp/sandbox_git_key"
+            return f"ssh -i {key_path} {' '.join(ssh_options)}"
+        elif ssh_key.key_path:
+            # 密钥文件路径
+            return f"ssh -i {ssh_key.key_path} {' '.join(ssh_options)}"
+        else:
+            return ""
+
+    @staticmethod
+    def build_clone_command_with_ssh(
+        options: CloneOptions,
+        git_config: GitConfig,
+    ) -> List[str]:
+        """构建支持SSH的克隆命令
+
+        Args:
+            options: 克隆选项
+            git_config: Git配置（包含SSH密钥）
+
+        Returns:
+            git clone命令参数列表（包含GIT_SSH_COMMAND前缀）
+        """
+        cmd = []
+
+        # 如果配置了SSH密钥，添加GIT_SSH_COMMAND
+        if git_config.auth_type.is_ssh() and not git_config.ssh_key.is_empty():
+            ssh_cmd = CloneService.build_git_ssh_command(git_config.ssh_key)
+            if ssh_cmd:
+                cmd.append(f"GIT_SSH_COMMAND='{ssh_cmd}'")
+
+        # 添加 git clone 命令
+        cmd.extend(CloneService.build_clone_command(options, git_config))
+
+        return cmd
