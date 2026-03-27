@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed sensitive URL exposure in CLI help text and documentation
 - Added `--verbose` / `-v` option to `command exec` and `command run` commands for detailed output
 - Added `has_output()` method to `CommandOutput` value object
+- DDD design document now includes command error display design with ExecutionStatus states
 
 ### Fixed
 - Fixed command execution output not displaying results (API response format parsing issue)
@@ -40,6 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `ShellExecResponse.from_dict()` to handle None values
 - Fixed `OutputFormatter` to always display output content (even when empty)
 - Fixed CLI output display issue when stdout is empty
+- Fixed `Execution` entity missing `mark_timeout()` method
+- Fixed `CommandAppService` not correctly handling command execution errors (exit_code != 0)
+- Fixed command run with incorrect commands not showing error messages
 
 ## [0.0.2] - 2026-03-25
 

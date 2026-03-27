@@ -104,6 +104,9 @@ class CommandAppService:
                 else:
                     # 连接正常或无法确定，标记为普通超时
                     execution.execution.mark_timeout()
+            elif command_output.has_error():
+                # 命令执行完成但有错误
+                execution.execution.complete(command_output)
             else:
                 # 命令执行成功
                 execution.execution.complete(command_output)

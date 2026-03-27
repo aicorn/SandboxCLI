@@ -196,6 +196,28 @@ Config Aggregate (Aggregate Root)
 | ExecutionStatus | 执行状态（成功/失败/超时） |
 | Timestamp | 时间戳 |
 
+**ExecutionStatus 设计**：
+
+| 状态 | 英文名 | 说明 |
+|------|--------|------|
+| PENDING | Pending | 待执行 |
+| RUNNING | Running | 执行中 |
+| SUCCESS | Success | 执行成功（exit_code = 0） |
+| FAILED | Failed | 执行失败（exit_code ≠ 0 或 stderr 有内容） |
+| TIMEOUT | Timeout | 执行超时（原因未知） |
+| TIMEOUT_WITH_CONNECTION_FAIL | Timeout (Connection Failed) | 超时且连接检测失败 |
+| TIMEOUT_WITH_CONNECTION_OK | Timeout (Connection OK) | 超时但连接正常 |
+
+**错误场景类型**：
+
+| 场景 | 触发条件 | exit_code | stderr |
+|------|----------|------------|--------|
+| 命令不存在 | 远程服务器无法找到命令 | 非0 | "command not found" 类似信息 |
+| 命令语法错误 | 命令语法不正确 | 非0 | 语法错误信息 |
+| 权限不足 | 无执行权限 | 非0 | "Permission denied" |
+| 命令执行失败 | 命令执行返回非0退出码 | 非0 | 命令的错误输出 |
+| 正常错误输出 | 命令正常执行但有错误输出 | 非0 | stderr 内容 |
+
 #### Aggregates
 
 ```
@@ -276,10 +298,14 @@ CommandOutput 是命令执行结果的核心 Value Object，必须包含实际�
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**ExecutionStatus 扩展**：
+**ExecutionStatus 完整设计**：
 
 | 状态值 | 说明 |
 |--------|------|
+| PENDING | 待执行 |
+| RUNNING | 执行中 |
+| SUCCESS | 成功（exit_code = 0） |
+| FAILED | 失败（exit_code ≠ 0 或 stderr 有内容） |
 | TIMEOUT | 超时（原因未知） |
 | TIMEOUT_WITH_CONNECTION_FAIL | 超时，且连接检测失败 |
 | TIMEOUT_WITH_CONNECTION_OK | 超时，但连接正常（可能是命令本身执行慢） |
@@ -922,7 +948,58 @@ Exit Code: 0
 /home/gem
 ```
 
-### 5.8 API 响应格式
+### 5.8 CLI 输出显示设计
+
+**需求**：命令执行完成后，需要正确显示执行结果，包括成功输出和错误信息。
+
+**错误输出显示逻辑**：
+
+| 场景 | 简洁模式（默认） | 详细模式（--verbose） |
+|------|-----------------|---------------------|
+| 执行成功 (exit_code=0, stderr=""） | 显示 stdout | 显示完整执行信息 + stdout |
+| 执行成功但有 stderr | 显示 stderr | 显示完整执行信息 + stderr |
+| 执行失败 (exit_code≠0) | 显示 stderr（如有），否则显示 "Command failed with exit code: X" | 显示完整执行信息 + stdout + stderr + exit_code |
+| 超时 | 显示超时错误信息 | 显示完整执行信息 + 超时原因 |
+| 执行超时且连接失败 | 显示连接失败错误信息 | 显示完整执行信息 + 连接检查结果 |
+
+**简洁模式输出示例**：
+
+```
+# 执行成功
+$ sandboxcli command run "pwd"
+/home/user
+
+# 执行失败（命令不存在）
+$ sandboxcli command run "invalid_command"
+bash: line 1: invalid_command: command not found
+
+# 执行失败（无 stderr）
+$ sandboxcli command run "exit 1"
+
+Command failed with exit code: 1
+```
+
+**详细模式输出示例**：
+
+```
+======================================
+Command Execution Result
+======================================
+Execution ID: abc-123
+Command: invalid_command
+Status: FAILED
+
+Error:
+bash: line 1: invalid_command: command not found
+Exit Code: 127
+```
+
+**实现要点**：
+1. CLI 接口层在调用 `OutputFormatter.format_command_output()` 前，需要检查 `ExecutionStatus`
+2. 当 `status` 为 `FAILED` 或 `exit_code != 0` 时，应优先显示 stderr 内容
+3. 当 `status` 为 `FAILED` 且无 stderr 时，应生成默认错误消息提示用户
+
+### 5.9 API 响应格式
 
 **Shell Exec 响应格式**：
 

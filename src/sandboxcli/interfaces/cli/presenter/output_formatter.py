@@ -90,10 +90,18 @@ class OutputFormatter:
             if isinstance(output_data, dict):
                 stdout = output_data.get("stdout", "")
                 stderr = output_data.get("stderr", "")
+                exit_code = output_data.get("exit_code", 0)
+
+                # 根据设计文档：错误输出优先显示
                 if stderr:
-                    # 错误输出到 stderr
+                    # 有 stderr 则显示 stderr
                     return stderr
-                return stdout
+                elif exit_code != 0:
+                    # 执行失败但没有 stderr 时，显示默认错误消息
+                    return f"Command failed with exit code: {exit_code}"
+                else:
+                    # 执行成功，显示 stdout（可能为空）
+                    return stdout
             elif output_data:
                 return str(output_data)
             return ""
@@ -113,7 +121,12 @@ class OutputFormatter:
 
         # 执行状态
         if "status" in output:
-            lines.append(f"Status: {output['status']}")
+            status = output["status"]
+            lines.append(f"Status: {status}")
+
+            # 如果是失败状态，添加颜色标记
+            if status in ("FAILED", "TIMEOUT", "TIMEOUT_WITH_CONNECTION_FAIL", "TIMEOUT_WITH_CONNECTION_OK"):
+                lines.append("")
 
         # 输出内容 - 支持字典和字符串两种格式
         if "output" in output:
@@ -135,14 +148,21 @@ class OutputFormatter:
                     lines.append("\nOutput: (empty)")
 
                 lines.append(f"Exit Code: {exit_code}")
+
+                # 如果执行失败但没有错误输出，显示默认消息
+                if exit_code != 0 and not stderr:
+                    lines.append(f"\nNote: Command exited with code {exit_code}")
             elif output_data:
                 # 字符串格式
                 lines.append(f"\nOutput:\n{output_data}")
             else:
-                # output 存在但是空（如空字典）
+                # output 存在但是空（如空字典或 None）
                 lines.append("\nOutput: (empty)")
-                if "exit_code" in output_data if isinstance(output_data, dict) else False:
-                    lines.append(f"Exit Code: {output.get('exit_code', 0)}")
+                # 获取 exit_code（如果存在）
+                if isinstance(output.get("output"), dict):
+                    exit_code = output.get("output").get("exit_code", 0)
+                    if exit_code != 0:
+                        lines.append(f"Exit Code: {exit_code}")
 
         # 兼容旧格式
         if "error" in output and output["error"]:

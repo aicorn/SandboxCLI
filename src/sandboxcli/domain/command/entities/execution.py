@@ -55,6 +55,10 @@ class Execution(BaseModel):
         self.status = self.status.mark_timeout()
         self.ended_at = Timestamp.now()
 
+    def mark_timeout(self) -> None:
+        """标记为超时（别名方法，与 timeout 等效）"""
+        self.timeout()
+
     def mark_timeout_with_connection_fail(self) -> None:
         """执行超时且连接检测失败"""
         self.command_output = CommandOutput(
