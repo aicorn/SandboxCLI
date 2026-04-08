@@ -12,12 +12,6 @@ jobs:
     permissions:
       contents: read
 
-    env:
-      SOCKS5_PROXY: "socks5://${{ secrets.S5_USERNAME }}:${{ secrets.S5_PASSWORD }}@${{ secrets.S5_HOST }}:${{ secrets.S5_PORT }}"
-      ALL_PROXY: "socks5://${{ secrets.S5_USERNAME }}:${{ secrets.S5_PASSWORD }}@${{ secrets.S5_HOST }}:${{ secrets.S5_PORT }}"
-      HTTP_PROXY: "socks5://${{ secrets.S5_USERNAME }}:${{ secrets.S5_PASSWORD }}@${{ secrets.S5_HOST }}:${{ secrets.S5_PORT }}"
-      HTTPS_PROXY: "socks5://${{ secrets.S5_USERNAME }}:${{ secrets.S5_PASSWORD }}@${{ secrets.S5_HOST }}:${{ secrets.S5_PORT }}"
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -28,10 +22,13 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
+        env:
+          ALL_PROXY: "socks5://${{ secrets.S5_USERNAME }}:${{ secrets.S5_PASSWORD }}@${{ secrets.S5_HOST }}:${{ secrets.S5_PORT }}"
+          PIP_PROXY: "socks5://${{ secrets.S5_USERNAME }}:${{ secrets.S5_PASSWORD }}@${{ secrets.S5_HOST }}:${{ secrets.S5_PORT }}"
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
-          pip install -e .
+          python -m pip install --upgrade pip --proxy "$PIP_PROXY"
+          pip install -r requirements-dev.txt --proxy "$PIP_PROXY"
+          pip install -e . --proxy "$PIP_PROXY"
 
       - name: Run tests
         run: |
