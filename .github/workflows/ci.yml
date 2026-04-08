@@ -12,6 +12,12 @@ jobs:
     permissions:
       contents: read
 
+    env:
+      SOCKS5_PROXY: "socks5://${{ secrets.S5_USERNAME }}:${{ secrets.S5_PASSWORD }}@${{ secrets.S5_HOST }}:${{ secrets.S5_PORT }}"
+      ALL_PROXY: "socks5://${{ secrets.S5_USERNAME }}:${{ secrets.S5_PASSWORD }}@${{ secrets.S5_HOST }}:${{ secrets.S5_PORT }}"
+      HTTP_PROXY: "socks5://${{ secrets.S5_USERNAME }}:${{ secrets.S5_PASSWORD }}@${{ secrets.S5_HOST }}:${{ secrets.S5_PORT }}"
+      HTTPS_PROXY: "socks5://${{ secrets.S5_USERNAME }}:${{ secrets.S5_PASSWORD }}@${{ secrets.S5_HOST }}:${{ secrets.S5_PORT }}"
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
