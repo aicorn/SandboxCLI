@@ -3,12 +3,14 @@ name: CI
 on:
   push:
     branches:
-      - main
+      - master
+      - v0.1.1
       - "feature/**"
       - "fix/**"
   pull_request:
     branches:
-      - main
+      - master
+      - v0.1.1
 
 jobs:
   lint:
