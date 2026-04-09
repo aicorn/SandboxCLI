@@ -4,6 +4,7 @@ import click
 from sandboxcli.application.commands.git import CleanRepositoryCommand, CloneRepositoryCommand, PullCodeCommand, SwitchBranchCommand
 from sandboxcli.application.queries.git import GetBranchesQuery, GetGitLogQuery, GetGitStatusQuery
 from sandboxcli.application.services.git_app_service import GitAppService
+from sandboxcli.domain.command import CommandInput
 from sandboxcli.interfaces.cli.presenter.output_formatter import OutputFormatter
 from sandboxcli.domain.git.value_objects import CleanupType
 
@@ -50,8 +51,92 @@ def get_branches(repo_path: str, include_remote: bool):
         repo_path=repo_path,
         include_remote=include_remote,
     )
-    click.echo(f"Getting branches for: {repo_path}")
-    # TODO: 调用应用服务
+    
+    # 获取工作目录和服务器配置
+    working_dir = _git_service._get_working_directory()
+    base_url = _git_service._get_base_url()
+    
+    if not base_url:
+        click.echo("Error: No sandbox server configured. Please configure sandbox server first.", err=True)
+        raise click.ClickException("没有配置沙盒服务器地址，无法获取分支列表")
+    
+    # 使用远程沙盒执行 git branch 命令
+    client = _git_service._get_remote_client()
+    
+    if not client:
+        click.echo("Error: Failed to connect to sandbox server.", err=True)
+        raise click.ClickException("无法连接到沙盒服务器")
+    
+    # 构建 git branch 命令
+    branch_cmd = "git branch"
+    if include_remote:
+        branch_cmd += " -a"  # 包含所有分支
+    branch_cmd += f" -v"  # 显示详细信息
+    
+    # 在指定目录下执行
+    if working_dir and working_dir != ".":
+        full_cmd = f"cd {working_dir}/{repo_path} && {branch_cmd}"
+    else:
+        full_cmd = f"cd {repo_path} && {branch_cmd}"
+    
+    try:
+        command_input = CommandInput(
+            command=full_cmd,
+            args=[],
+            working_directory=None,
+        )
+        
+        output = client.execute_command(command_input)
+        
+        if output.exit_code != 0:
+            error_msg = output.stderr or output.stdout or "Failed to get branches"
+            click.echo(f"Error: {error_msg}", err=True)
+            raise click.ClickException(error_msg)
+        
+        # 解析输出并显示分支列表
+        lines = output.stdout.strip().split("\n") if output.stdout.strip() else []
+        
+        if not lines:
+            click.echo("No branches found.")
+            return
+        
+        click.echo(f"Branches for: {repo_path}")
+        click.echo("-" * 40)
+        
+        current_branch = None
+        # 首先找到当前分支
+        for line in lines:
+            if line.startswith("*"):
+                current_branch = line[1:].strip()
+                break
+        
+        # 显示所有分支
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # 判断是否为当前分支
+            is_current = line.startswith("*")
+            if is_current:
+                line = line[1:].strip()
+            
+            # 去除远程跟踪分支前缀 (如 remotes/origin/HEAD -> origin/main)
+            display_name = line
+            is_remote = False
+            if line.startswith("remotes/"):
+                is_remote = True
+                # 简化显示，如 remotes/origin/main -> origin/main
+                display_name = line.replace("remotes/", "")
+            
+            # 标记当前分支
+            prefix = "*" if is_current else " "
+            
+            click.echo(f"  {prefix} {display_name}")
+            
+    except Exception as e:
+        click.echo(f"Error: {str(e)}", err=True)
+        raise click.ClickException(f"获取分支列表失败: {str(e)}")
 
 
 @git_group.command(name="switch")
