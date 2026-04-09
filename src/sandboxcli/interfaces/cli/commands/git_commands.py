@@ -38,8 +38,84 @@ def get_git_log(repo_path: str, max_count: int, branch: str):
         max_count=max_count,
         branch=branch,
     )
-    click.echo(f"Getting git log for: {repo_path}")
-    # TODO: 调用应用服务
+    
+    # 获取工作目录和服务器配置
+    working_dir = _git_service._get_working_directory()
+    base_url = _git_service._get_base_url()
+    
+    if not base_url:
+        click.echo("Error: No sandbox server configured. Please configure sandbox server first.", err=True)
+        raise click.ClickException("没有配置沙盒服务器地址，无法获取Git日志")
+    
+    # 使用远程沙盒执行 git log 命令
+    client = _git_service._get_remote_client()
+    
+    if not client:
+        click.echo("Error: Failed to connect to sandbox server.", err=True)
+        raise click.ClickException("无法连接到沙盒服务器")
+    
+    # 构建 git log 命令
+    log_cmd = f"git log --pretty=format:'%h|%an|%ae|%ad|%s' -n {max_count}"
+    if branch:
+        log_cmd += f" {branch}"
+    
+    # 在指定目录下执行
+    if working_dir and working_dir != ".":
+        full_cmd = f"cd {working_dir}/{repo_path} && {log_cmd}"
+    else:
+        full_cmd = f"cd {repo_path} && {log_cmd}"
+    
+    try:
+        command_input = CommandInput(
+            command=full_cmd,
+            args=[],
+            working_directory=None,
+        )
+        
+        output = client.execute_command(command_input)
+        
+        if output.exit_code != 0:
+            error_msg = output.stderr or output.stdout or "Failed to get git log"
+            click.echo(f"Error: {error_msg}", err=True)
+            raise click.ClickException(error_msg)
+        
+        # 解析输出并显示日志
+        lines = output.stdout.strip().split("\n") if output.stdout.strip() else []
+        
+        if not lines:
+            click.echo("No commit history found.")
+            return
+        
+        click.echo(f"Git Log for: {repo_path}")
+        click.echo("-" * 60)
+        click.echo(f"{'Hash':<8} {'Author':<20} {'Date':<12} {'Message'}")
+        click.echo("-" * 60)
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # 解析格式: hash|author|email|date|message
+            parts = line.split("|")
+            if len(parts) >= 5:
+                commit_hash = parts[0][:7]
+                author = parts[1][:20]
+                email = parts[2]
+                date = parts[3][:10] if len(parts[3]) > 10 else parts[3]
+                message = parts[4]
+                
+                click.echo(f"{commit_hash:<8} {author:<20} {date:<12} {message}")
+            elif len(parts) == 1:
+                # 可能是简化输出，只有 hash
+                click.echo(f"{line[:7]:<8}")
+        
+        click.echo("-" * 60)
+        click.echo(f"Total: {len(lines)} commits")
+        
+    except Exception as e:
+        click.echo(f"Error: {str(e)}", err=True)
+        raise click.ClickException(f"获取Git日志失败: {str(e)}")
 
 
 @git_group.command(name="branch")
