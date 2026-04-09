@@ -1,4 +1,5 @@
 """Git应用服务"""
+import datetime
 from typing import Dict, List, Optional, TYPE_CHECKING
 
 from ...domain.configuration.value_objects import GitConfig
@@ -338,16 +339,20 @@ class GitAppService:
             # 执行远程命令 - 在工作目录下执行git clone
             # 方式: cd working_dir && git clone ...
             if working_dir and working_dir != ".":
-                full_command = f"cd {working_dir} && {' '.join(clone_cmd)}"
-            else:
-                full_command = " ".join(clone_cmd)
+                # 注意：这里需要包含 GIT_SSH_COMMAND
+                full_command = f"cd {working_dir} && {full_command}"
             
             import sys
             print(f"[DEBUG] 执行远程命令: '{full_command}'", file=sys.stderr)
+
+            # 在远程沙盒中执行 git clone 并将输出重定向到日志文件
+            log_file = "/tmp/git_clone_output.log"
+            # 构建带输出的 git clone 命令 (使用 2>&1 同时重定向 stdout 和 stderr)
+            git_clone_with_log = f"{full_command} > {log_file} 2>&1"
             
             command_input_for_remote = CommandInput(
-                command=full_command,
-                args=[],  # args已经包含在command中了
+                command=git_clone_with_log,
+                args=[],
                 working_directory=None,
             )
             
@@ -373,8 +378,14 @@ class GitAppService:
                     operation.complete(success_result)
                     return Result.ok(success_result)
                 else:
-                    # 克隆失败
-                    error_msg = command_output.stderr or "未知错误"
+                    # 克隆失败 - 读取日志文件获取详细信息
+                    log_file = "/tmp/git_clone_output.log"
+                    try:
+                        log_content = client.read_file(log_file)
+                        print(f"[DEBUG] git clone 日志内容: {log_content}", file=sys.stderr)
+                        error_msg = log_content or command_output.stderr or "未知错误"
+                    except Exception:
+                        error_msg = command_output.stderr or "未知错误"
                     operation.fail(error_msg)
                     return Result.fail(f"克隆失败: {error_msg}")
             except Exception as e:

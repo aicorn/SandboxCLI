@@ -74,6 +74,8 @@ SandboxCLI 是一个远程沙盒系统控制工具，用户通过 CLI 客户端�
 | Git邮箱 | GitEmail | Git操作时的邮箱 |
 | **工作目录** | **WorkingDirectory** | **CLI操作的工作目录，Git操作和命令执行的基准目录，默认值为"."** |
 | **工作目录变更事件** | **WorkingDirectoryChangedEvent** | **工作目录被修改时触发的事件** |
+| **Verbose级别** | **VerboseLevel** | **调试信息输出级别 (OFF/ERROR/INFO/DEBUG)** |
+| **Verbose配置** | **VerboseConfig** | **调试输出配置（级别、时间戳、彩色输出等）** |
 
 #### 指令上下文 (Command Context)
 
@@ -133,6 +135,8 @@ SandboxCLI 是一个远程沙盒系统控制工具，用户通过 CLI 客户端�
 | **SSHKey** | **SSH私钥** |
 | **GitCredential** | **Git认证凭据（用户名+邮箱）** |
 | **WorkingDirectory** | **工作目录配置（路径、默认值"."）** |
+| **VerboseLevel** | **调试级别（OFF/ERROR/INFO/DEBUG）** |
+| **VerboseConfig** | **调试输出配置（级别、时间戳、彩色输出等）** |
 
 #### Aggregate
 
@@ -144,6 +148,7 @@ Config Aggregate (Aggregate Root)
     ├── Timeout
     ├── SandboxType
     ├── WorkingDirectory (工作目录，默认值".")
+    ├── VerboseConfig (调试配置，默认级别OFF)    # 新增
     └── GitConfig (Value Object)
         ├── gitRepoUrl: GitRepoUrl
         ├── gitAuthType: GitAuthType
@@ -1111,6 +1116,93 @@ Command failed with exit code: 1
 | data.output | str | 命令输出内容 |
 | data.exit_code | int | 命令退出码 |
 | data.status | str | 命令执行状态 |
+
+---
+
+### 5.11 Verbose 调试选项设计
+
+**需求**：添加一个 verbose 选项，表示在执行指令时打印 debug 信息。
+
+**设计目标**：
+
+1. **全局配置**：verbose 是一个全局配置选项，可以在 `config set` 中设置
+2. **级别控制**：支持多个调试级别，控制输出的详细程度
+3. **独立于CLI参数**：可以通过配置设置，也可以通过命令行参数临时覆盖
+
+**VerboseLevel (Value Object)**：
+
+| 枚举值 | 说明 | 输出内容 |
+|--------|------|----------|
+| OFF | 关闭 | 不输出任何调试信息 |
+| ERROR | 错误 | 仅输出错误信息 |
+| INFO | 信息 | 输出常规调试信息 |
+| DEBUG | 调试 | 输出详细调试信息（包括通信过程） |
+
+**VerboseConfig (Value Object)**：
+
+| 字段 | 类型 | 说明 | 默认值 |
+|------|------|------|--------|
+| level | VerboseLevel | 调试级别 | OFF |
+| enableTimestamp | bool | 是否显示时间戳 | true |
+| enableColor | bool | 是否使用彩色输出 | true |
+
+**Config Aggregate 更新**：
+
+```
+Config Aggregate (Aggregate Root)
+├── Config (Entity, Root)
+├── configItems: ConfigItem[] (Value Objects 集合)
+│   ├── ServerAddress
+│   ├── Timeout
+│   ├── SandboxType
+│   ├── WorkingDirectory
+│   ├── VerboseConfig          # 新增：Verbose配置
+│   └── GitConfig
+│       ├── gitRepoUrl
+│       ├── gitAuthType
+│       ├── sshKey
+│       └── gitCredential
+```
+
+**CLI 命令选项更新**：
+
+`config set` 命令新增选项：
+- `--verbose/--no-verbose`: 启用/禁用调试输出
+- `--verbose-level`: 调试级别 (off/error/info/debug)
+
+`command exec` 命令新增选项：
+- `--verbose/--no-verbose`: 临时覆盖配置的调试级别
+
+**调试信息输出示例**：
+
+```bash
+# 启用verbose (DEBUG级别)
+$ sandboxcli config set --verbose --verbose-level debug
+$ sandboxcli command exec "ls"
+
+[2026-04-09 10:26:44] DEBUG: Connecting to sandbox at http://localhost:8080
+[2026-04-09 10:26:44] DEBUG: Sending request: {"command": "ls", "cwd": "."}
+[2026-04-09 10:26:45] DEBUG: Response received: {"success": true, "data": {...}}
+[2026-04-09 10:26:45] DEBUG: Command executed successfully in 1.2s
+
+/home/user
+```
+
+**实现层级**：
+
+| 层级 | 职责 |
+|------|------|
+| 领域层 | VerboseLevel, VerboseConfig (Value Objects) |
+| 应用层 | 应用服务中根据verbose配置输出调试信息 |
+| 基础设施层 | Logging模块负责格式化调试输出 |
+| 接口层 | CLI参数解析，支持配置覆盖 |
+
+**设计决策**：
+
+1. **默认关闭**：verbose 默认关闭（OFF级别），避免输出过多信息影响用户体验
+2. **分层控制**：OFF < ERROR < INFO < DEBUG 四个级别，用户可以根据需要选择
+3. **配置优先**：全局配置优先，CLI参数可以临时覆盖
+4. **基础设施实现**：利用现有的 logging 模块实现调试输出
 
 ---
 

@@ -19,21 +19,25 @@ class SandboxClient(RemoteAdapter):
     通过 HTTP API 与 AIO Sandbox 通信
     """
 
+    # 默认超时时间（秒）：10分钟，用于支持长时间运行的命令如 git clone
+    DEFAULT_TIMEOUT = 600
+
     def __init__(
         self,
         config: ConnectionConfig,
-        timeout: int = 30,
+        timeout: int = None,
         verify_ssl: bool = True,
     ):
         """初始化 AIO Sandbox 客户端
 
         Args:
             config: 连接配置
-            timeout: 请求超时时间（秒）
+            timeout: 请求超时时间（秒），默认 600 秒
             verify_ssl: 是否验证 SSL 证书
         """
         super().__init__(config)
-        self._timeout = timeout
+        # 如果没有指定 timeout，使用默认值 600 秒
+        self._timeout = timeout if timeout is not None else self.DEFAULT_TIMEOUT
         self._verify_ssl = verify_ssl
         self._client: Optional[httpx.Client] = None
         self._base_url = config.base_url or f"http://{config.host}:{config.port}"
@@ -41,9 +45,20 @@ class SandboxClient(RemoteAdapter):
     def _get_client(self) -> httpx.Client:
         """获取 HTTP 客户端"""
         if self._client is None:
+            # 使用 httpx Timeout 对象支持更细粒度的超时控制
+            # connect: 连接超时 30 秒
+            # read: 读取超时使用配置的 self._timeout（默认 600 秒）
+            # write: 写入超时 30 秒
+            # pool: 池连接超时 30 秒
+            timeout = httpx.Timeout(
+                connect=30.0,
+                read=float(self._timeout),
+                write=30.0,
+                pool=30.0,
+            )
             self._client = httpx.Client(
                 base_url=self._base_url,
-                timeout=self._timeout,
+                timeout=timeout,
                 verify=self._verify_ssl,
             )
         return self._client
@@ -222,9 +237,16 @@ class SandboxAsyncClient(SandboxClient):
     async def connect(self) -> bool:
         """建立连接"""
         try:
+            # 使用 httpx Timeout 对象
+            timeout = httpx.Timeout(
+                connect=30.0,
+                read=float(self._timeout),
+                write=30.0,
+                pool=30.0,
+            )
             async with httpx.AsyncClient(
                 base_url=self._base_url,
-                timeout=self._timeout,
+                timeout=timeout,
                 verify=self._verify_ssl,
             ) as client:
                 response = await client.get(SandboxProtocol.ENDPOINT_SANDBOX)
@@ -237,9 +259,16 @@ class SandboxAsyncClient(SandboxClient):
 
     async def execute_command(self, command_input: CommandInput) -> CommandOutput:
         """异步执行命令"""
+        # 使用 httpx Timeout 对象
+        timeout = httpx.Timeout(
+            connect=30.0,
+            read=float(self._timeout),
+            write=30.0,
+            pool=30.0,
+        )
         async with httpx.AsyncClient(
             base_url=self._base_url,
-            timeout=self._timeout,
+            timeout=timeout,
             verify=self._verify_ssl,
         ) as client:
             request = SandboxProtocol.build_shell_exec_request(
