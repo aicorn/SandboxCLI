@@ -10,6 +10,7 @@ from ...domain.shared import Result
 from ...domain.command import CommandInput
 from ...infrastructure.persistence.config.config_repository import ConfigRepository
 from ...infrastructure.remote.adapter.factory import RemoteAdapterFactory
+from ...infrastructure.logging import get_verbose_logger
 from ..commands.git import CleanRepositoryCommand, CloneRepositoryCommand, PullCodeCommand, SwitchBranchCommand
 from ..queries.git import GetBranchesQuery, GetGitLogQuery, GetGitStatusQuery
 
@@ -28,8 +29,20 @@ class GitAppService:
         self._config_repository = ConfigRepository()
         self._config = self._config_repository.load()
         self._remote_client: Optional["RemoteAdapter"] = None
+        self._verbose_logger = None
         # 加载git_config
         self._load_git_config()
+        self._init_verbose_logger()
+    
+    def _init_verbose_logger(self):
+        """初始化VerboseLogger"""
+        verbose_config = getattr(self._config, 'verbose_config', None)
+        if verbose_config:
+            self._verbose_logger = get_verbose_logger(
+                level=verbose_config.level.value,
+                enable_timestamp=verbose_config.enable_timestamp,
+                enable_color=verbose_config.enable_color,
+            )
     
     def _load_git_config(self) -> None:
         """从配置项中加载Git配置"""
@@ -113,10 +126,17 @@ class GitAppService:
 
     def get_branches(self, query: GetBranchesQuery) -> Result[List]:
         """获取分支列表"""
+        if self._verbose_logger and self._verbose_logger.is_enabled():
+            self._verbose_logger.debug(f"Getting branches for: {query.repo_path}")
+        
         if not self._current_repo or self._current_repo.repo_path != query.repo_path:
             self._current_repo = GitService.create_repository(query.repo_path)
         
         branches = self._current_repo.get_branches()
+        
+        if self._verbose_logger and self._verbose_logger.is_enabled():
+            self._verbose_logger.debug(f"Found {len(branches)} branches")
+        
         return Result.ok([b.to_dict() for b in branches])
 
     def switch_branch(self, command: SwitchBranchCommand) -> Result[None]:
@@ -216,9 +236,14 @@ class GitAppService:
         Returns:
             Result: 克隆结果
         """
+        if self._verbose_logger and self._verbose_logger.is_enabled():
+            self._verbose_logger.debug(f"Preparing to clone repository: {command.url}")
+        
         # 先创建克隆操作
         clone_result = self.clone_repository(command, git_config)
         if not clone_result.is_success:
+            if self._verbose_logger and self._verbose_logger.is_enabled():
+                self._verbose_logger.error(f"Failed to create clone operation: {clone_result.error}")
             return Result.fail(clone_result.error)
         
         operation = clone_result.value
@@ -233,17 +258,22 @@ class GitAppService:
         working_dir = self._get_working_directory()
         
         if base_url:
+            if self._verbose_logger and self._verbose_logger.is_enabled():
+                self._verbose_logger.debug(f"Connecting to sandbox at {base_url}")
+            
             # 使用远程沙盒执行git clone命令
             client = self._get_remote_client()
             
             if not client:
+                if self._verbose_logger and self._verbose_logger.is_enabled():
+                    self._verbose_logger.error("Failed to connect to sandbox server")
                 return Result.fail("无法连接到沙盒服务器")
             
             # 构建git clone命令
-            import sys
-            print(f"[DEBUG] 准备执行git clone命令...", file=sys.stderr)
-            print(f"[DEBUG]   base_url: {base_url}", file=sys.stderr)
-            print(f"[DEBUG]   working_directory: {working_dir}", file=sys.stderr)
+            if self._verbose_logger and self._verbose_logger.is_enabled():
+                self._verbose_logger.debug(f"Preparing git clone command...")
+                self._verbose_logger.debug(f"  base_url: {base_url}")
+                self._verbose_logger.debug(f"  working_directory: {working_dir}")
             
             clone_cmd = ["git", "clone"]
             if command.branch:
@@ -334,7 +364,8 @@ class GitAppService:
             full_command_parts.extend(clone_cmd)
             full_command = " ".join(full_command_parts)
 
-            print(f"[DEBUG]   命令: {full_command}", file=sys.stderr)
+            if self._verbose_logger and self._verbose_logger.is_enabled():
+                self._verbose_logger.debug(f"Command: {full_command}")
             
             # 执行远程命令 - 在工作目录下执行git clone
             # 方式: cd working_dir && git clone ...
@@ -342,8 +373,8 @@ class GitAppService:
                 # 注意：这里需要包含 GIT_SSH_COMMAND
                 full_command = f"cd {working_dir} && {full_command}"
             
-            import sys
-            print(f"[DEBUG] 执行远程命令: '{full_command}'", file=sys.stderr)
+            if self._verbose_logger and self._verbose_logger.is_enabled():
+                self._verbose_logger.debug(f"Executing remote command: '{full_command}'")
 
             # 在远程沙盒中执行 git clone 并将输出重定向到日志文件
             log_file = "/tmp/git_clone_output.log"
@@ -359,12 +390,11 @@ class GitAppService:
             try:
                 command_output = client.execute_command(command_input_for_remote)
                 
-                # 添加诊断日志 - 输出到stderr以便用户可以看到
-                import sys
-                print(f"[DEBUG] git clone command output:", file=sys.stderr)
-                print(f"[DEBUG]   stdout: '{command_output.stdout}'", file=sys.stderr)
-                print(f"[DEBUG]   stderr: '{command_output.stderr}'", file=sys.stderr)
-                print(f"[DEBUG]   exit_code: {command_output.exit_code}", file=sys.stderr)
+                if self._verbose_logger and self._verbose_logger.is_enabled():
+                    self._verbose_logger.debug(f"git clone command output:")
+                    self._verbose_logger.debug(f"  stdout: '{command_output.stdout}'")
+                    self._verbose_logger.debug(f"  stderr: '{command_output.stderr}'")
+                    self._verbose_logger.debug(f"  exit_code: {command_output.exit_code}")
                 
                 if command_output.exit_code == 0:
                     # 克隆成功
@@ -382,17 +412,24 @@ class GitAppService:
                     log_file = "/tmp/git_clone_output.log"
                     try:
                         log_content = client.read_file(log_file)
-                        print(f"[DEBUG] git clone 日志内容: {log_content}", file=sys.stderr)
+                        if self._verbose_logger and self._verbose_logger.is_enabled():
+                            self._verbose_logger.debug(f"git clone log: {log_content}")
                         error_msg = log_content or command_output.stderr or "未知错误"
                     except Exception:
                         error_msg = command_output.stderr or "未知错误"
+                    if self._verbose_logger and self._verbose_logger.is_enabled():
+                        self._verbose_logger.error(f"Clone failed: {error_msg}")
                     operation.fail(error_msg)
                     return Result.fail(f"克隆失败: {error_msg}")
             except Exception as e:
+                if self._verbose_logger and self._verbose_logger.is_enabled():
+                    self._verbose_logger.error(f"Exception during clone: {str(e)}")
                 operation.fail(str(e))
                 return Result.fail(f"执行克隆命令失败: {str(e)}")
         else:
             # 没有配置base_url，无法执行远程命令
+            if self._verbose_logger and self._verbose_logger.is_enabled():
+                self._verbose_logger.error("No server address configured")
             operation.fail("No server address configured. Please configure sandbox server first.")
             return Result.fail("没有配置沙盒服务器地址，无法执行远程克隆命令")
 

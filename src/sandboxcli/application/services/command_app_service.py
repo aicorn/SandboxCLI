@@ -9,6 +9,7 @@ from ...domain.connection.services import ConnectionHealthCheckService
 from ...domain.shared import Result
 from ...infrastructure.persistence.config.config_repository import ConfigRepository
 from ...infrastructure.remote.adapter.factory import RemoteAdapterFactory
+from ...infrastructure.logging import get_verbose_logger, get_current_verbose_logger
 from ..commands.command import ExecuteCommandCommand
 
 if TYPE_CHECKING:
@@ -23,6 +24,18 @@ class CommandAppService:
         self._config_repository = ConfigRepository()
         self._config = self._config_repository.load()
         self._remote_client: Optional["RemoteAdapter"] = None  # 缓存远程客户端
+        self._verbose_logger = None
+        self._init_verbose_logger()
+
+    def _init_verbose_logger(self):
+        """初始化VerboseLogger"""
+        verbose_config = getattr(self._config, 'verbose_config', None)
+        if verbose_config:
+            self._verbose_logger = get_verbose_logger(
+                level=verbose_config.level.value,
+                enable_timestamp=verbose_config.enable_timestamp,
+                enable_color=verbose_config.enable_color,
+            )
 
     def _get_base_url(self) -> Optional[str]:
         """从配置中获取base_url"""
@@ -68,8 +81,14 @@ class CommandAppService:
 
     def execute_command(self, command: ExecuteCommandCommand) -> Result[Dict]:
         """执行命令（实际执行需要通过适配器调用远程服务）"""
+        # 输出Verbose调试信息
+        if self._verbose_logger and self._verbose_logger.is_enabled():
+            self._verbose_logger.debug(f"Preparing to execute command: {command.command}")
+        
         exec_result = self.create_execution(command)
         if exec_result.is_failure():
+            if self._verbose_logger and self._verbose_logger.is_enabled():
+                self._verbose_logger.error(f"Failed to create execution: {exec_result.error}")
             return Result.fail(exec_result.error)
         
         execution = exec_result.value
@@ -80,6 +99,9 @@ class CommandAppService:
         timeout = self._get_timeout()
         
         if base_url:
+            if self._verbose_logger and self._verbose_logger.is_enabled():
+                self._verbose_logger.debug(f"Connecting to sandbox at {base_url}")
+            
             # 使用 HTTP API 模式 (AIO Sandbox)
             client = self._get_remote_client()
             
@@ -90,11 +112,22 @@ class CommandAppService:
                 working_directory=command.working_directory,
             )
             
+            if self._verbose_logger and self._verbose_logger.is_enabled():
+                import json
+                request_data = {
+                    "command": command_input.command,
+                    "args": command_input.args,
+                    "working_directory": command_input.working_directory,
+                }
+                self._verbose_logger.debug(f"Sending request: {json.dumps(request_data)}")
+            
             # 执行远程命令（带超时处理）
             command_output = self._execute_with_timeout(client, command_input, timeout)
             
             # 检查是否超时
             if command_output is None:
+                if self._verbose_logger and self._verbose_logger.is_enabled():
+                    self._verbose_logger.error("Command execution timed out")
                 # 命令执行超时，进行连接健康检查
                 health_check_result = self._perform_health_check()
                 
@@ -106,12 +139,18 @@ class CommandAppService:
                     execution.execution.mark_timeout()
             elif command_output.has_error():
                 # 命令执行完成但有错误
+                if self._verbose_logger and self._verbose_logger.is_enabled():
+                    self._verbose_logger.error(f"Command failed: {command_output.stderr}")
                 execution.execution.complete(command_output)
             else:
                 # 命令执行成功
+                if self._verbose_logger and self._verbose_logger.is_enabled():
+                    self._verbose_logger.debug(f"Command executed successfully in {timeout}s")
                 execution.execution.complete(command_output)
         else:
             # 没有配置 base_url，无法执行远程命令
+            if self._verbose_logger and self._verbose_logger.is_enabled():
+                self._verbose_logger.error("No server address configured. Please configure sandbox server first.")
             execution.execution.fail("No server address configured. Please configure sandbox server first.")
         
         return Result.ok(execution.to_dict())

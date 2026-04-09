@@ -58,7 +58,9 @@ def get_config(config_id: str, include_sensitive: bool):
 @click.option("--value", help="自定义配置值")
 @click.option("--base-url", help="AIO Sandbox HTTP API 地址 (如 http://your-aio-server:8080)")
 @click.option("--working-directory", help="工作目录 (默认值为 '.')")
-def update_config(host, port, username, timeout, key, value, base_url, working_directory):
+@click.option("--verbose/--no-verbose", default=None, help="启用/禁用调试输出")
+@click.option("--verbose-level", type=click.Choice(["off", "error", "info", "debug"]), help="调试级别")
+def update_config(host, port, username, timeout, key, value, base_url, working_directory, verbose, verbose_level):
     """更新配置"""
     command = UpdateConfigCommand(
         server_host=host,
@@ -69,6 +71,8 @@ def update_config(host, port, username, timeout, key, value, base_url, working_d
         config_value=value,
         base_url=base_url,
         working_directory=working_directory,
+        verbose=verbose,
+        verbose_level=verbose_level,
     )
     
     service, repository = _get_config_service()
@@ -92,6 +96,10 @@ def update_config(host, port, username, timeout, key, value, base_url, working_d
                 for event in service._config.pending_events:
                     if hasattr(event, 'get_change_message'):
                         click.echo(f"  提示: {event.get_change_message()}")
+        # 显示verbose配置更新提示
+        if verbose is not None or verbose_level:
+            verbose_cfg = service._config.get_verbose_config()
+            click.echo(f"  Verbose: {verbose_cfg.level.value}")
     else:
         click.echo(f"Error: {result.error}", err=True)
 

@@ -4,6 +4,7 @@
 """
 import logging
 import sys
+from datetime import datetime
 from enum import Enum
 from typing import Optional
 
@@ -15,6 +16,148 @@ class LogLevel(Enum):
     WARNING = logging.WARNING
     ERROR = logging.ERROR
     CRITICAL = logging.CRITICAL
+
+
+class VerboseLogger:
+    """Verbose调试日志记录器
+    
+    根据VerboseConfig配置输出调试信息。
+    支持时间戳和彩色输出。
+    """
+    
+    # ANSI颜色码
+    COLOR_RESET = "\033[0m"
+    COLOR_RED = "\033[91m"
+    COLOR_YELLOW = "\033[93m"
+    COLOR_GREEN = "\033[92m"
+    COLOR_BLUE = "\033[94m"
+    COLOR_GRAY = "\033[90m"
+    
+    LEVEL_COLORS = {
+        "DEBUG": COLOR_BLUE,
+        "INFO": COLOR_GREEN,
+        "WARNING": COLOR_YELLOW,
+        "ERROR": COLOR_RED,
+    }
+    
+    def __init__(
+        self,
+        level: str = "off",
+        enable_timestamp: bool = True,
+        enable_color: bool = True,
+    ):
+        """初始化VerboseLogger
+        
+        Args:
+            level: 调试级别 (off/error/info/debug)
+            enable_timestamp: 是否显示时间戳
+            enable_color: 是否使用彩色输出
+        """
+        self._level = level.lower()
+        self._enable_timestamp = enable_timestamp
+        self._enable_color = enable_color
+    
+    @property
+    def level(self) -> str:
+        """获取调试级别"""
+        return self._level
+    
+    def _should_log(self, message_level: str) -> bool:
+        """判断是否应该记录日志"""
+        level_order = {"debug": 0, "info": 1, "error": 2, "off": 3}
+        message_level_value = level_order.get(message_level.lower(), 3)
+        current_level_value = level_order.get(self._level, 3)
+        return message_level_value >= current_level_value
+    
+    def _format_message(self, level: str, message: str) -> str:
+        """格式化日志消息"""
+        parts = []
+        
+        # 添加时间戳
+        if self._enable_timestamp:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            parts.append(f"[{timestamp}]")
+        
+        # 添加级别
+        level_str = level.upper()
+        if self._enable_color and level_str in self.LEVEL_COLORS:
+            color = self.LEVEL_COLORS[level_str]
+            parts.append(f"{color}{level_str}{self.COLOR_RESET}")
+        else:
+            parts.append(level_str)
+        
+        # 添加消息
+        parts.append(message)
+        
+        return " ".join(parts)
+    
+    def debug(self, message: str) -> None:
+        """记录调试信息"""
+        if self._should_log("debug"):
+            formatted = self._format_message("debug", message)
+            print(formatted)
+    
+    def info(self, message: str) -> None:
+        """记录一般信息"""
+        if self._should_log("info"):
+            formatted = self._format_message("info", message)
+            print(formatted)
+    
+    def error(self, message: str) -> None:
+        """记录错误信息"""
+        if self._should_log("error"):
+            formatted = self._format_message("error", message)
+            print(formatted, file=sys.stderr)
+    
+    def log(self, message: str) -> None:
+        """记录信息（根据当前级别）"""
+        if self._level == "debug":
+            self.debug(message)
+        elif self._level == "info":
+            self.info(message)
+        elif self._level == "error":
+            self.error(message)
+    
+    def set_level(self, level: str) -> None:
+        """设置调试级别"""
+        self._level = level.lower()
+    
+    def is_enabled(self) -> bool:
+        """是否启用"""
+        return self._level != "off"
+
+
+# 全局VerboseLogger实例
+_verbose_logger = VerboseLogger()
+
+
+def get_verbose_logger(
+    level: str = "off",
+    enable_timestamp: bool = True,
+    enable_color: bool = True,
+) -> VerboseLogger:
+    """获取VerboseLogger实例
+    
+    Args:
+        level: 调试级别
+        enable_timestamp: 是否显示时间戳
+        enable_color: 是否使用彩色输出
+    
+    Returns:
+        VerboseLogger实例
+    """
+    global _verbose_logger
+    _verbose_logger = VerboseLogger(
+        level=level,
+        enable_timestamp=enable_timestamp,
+        enable_color=enable_color,
+    )
+    return _verbose_logger
+
+
+def get_current_verbose_logger() -> VerboseLogger:
+    """获取当前全局VerboseLogger实例"""
+    return _verbose_logger
 
 
 class Logger:

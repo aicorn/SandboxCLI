@@ -74,6 +74,33 @@ class ConfigAggregate:
         """
         return self._config.get_working_directory_path()
 
+    def update_verbose_config(
+        self,
+        level: str = None,
+        enable_timestamp: bool = None,
+        enable_color: bool = None,
+    ) -> None:
+        """更新Verbose调试配置
+
+        Args:
+            level: 调试级别 (off/error/info/debug)
+            enable_timestamp: 是否显示时间戳
+            enable_color: 是否使用彩色输出
+        """
+        self._config.update_verbose_config(
+            level=level,
+            enable_timestamp=enable_timestamp,
+            enable_color=enable_color,
+        )
+
+    def get_verbose_config(self):
+        """获取Verbose配置
+
+        Returns:
+            VerboseConfig 对象
+        """
+        return self._config.get_verbose_config()
+
     def create_snapshot(self) -> Dict:
         """创建配置快照"""
         return self._config.to_dict()
@@ -89,6 +116,12 @@ class ConfigAggregate:
             self._config.update_username(snapshot["username"])
         if "working_directory" in snapshot and snapshot["working_directory"]:
             self._config.update_working_directory(snapshot["working_directory"])
+        if "verbose_config" in snapshot and snapshot["verbose_config"]:
+            self._config.update_verbose_config(
+                level=snapshot["verbose_config"].get("level"),
+                enable_timestamp=snapshot["verbose_config"].get("enable_timestamp"),
+                enable_color=snapshot["verbose_config"].get("enable_color"),
+            )
         if "items" in snapshot:
             for item in snapshot["items"]:
                 self._config.set_item(item["key"], item["value"], item.get("description"))

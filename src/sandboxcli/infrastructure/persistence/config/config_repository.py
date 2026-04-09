@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 from sandboxcli.domain.configuration.entities import Config
-from sandboxcli.domain.configuration.value_objects import ServerAddress, Timeout, WorkingDirectory
+from sandboxcli.domain.configuration.value_objects import ServerAddress, Timeout, VerboseConfig, WorkingDirectory
 
 
 class ConfigRepository:
@@ -77,6 +77,14 @@ class ConfigRepository:
                 "isDefault": config.working_directory.isDefault,
             }
 
+        # 序列化 verbose_config
+        if config.verbose_config:
+            data["verbose_config"] = {
+                "level": config.verbose_config.level.value,
+                "enable_timestamp": config.verbose_config.enable_timestamp,
+                "enable_color": config.verbose_config.enable_color,
+            }
+
         # 序列化items（包括git_config等自定义配置项）
         # 使用get_all_items()因为items字段有exclude=True
         all_items = config.get_all_items()
@@ -112,6 +120,15 @@ class ConfigRepository:
             config.working_directory = WorkingDirectory(
                 path=wd_data.get("path", "."),
                 isDefault=wd_data.get("isDefault", True),
+            )
+
+        # 反序列化 verbose_config
+        if "verbose_config" in data:
+            vc_data = data["verbose_config"]
+            config.verbose_config = VerboseConfig(
+                level=vc_data.get("level", "off"),
+                enable_timestamp=vc_data.get("enable_timestamp", True),
+                enable_color=vc_data.get("enable_color", True),
             )
 
         if "items" in data and data["items"]:

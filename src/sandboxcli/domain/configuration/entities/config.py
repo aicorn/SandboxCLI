@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field, PrivateAttr
 
-from ..value_objects import ConfigItem, ServerAddress, Timeout, SandboxType, WorkingDirectory
+from ..value_objects import ConfigItem, ServerAddress, Timeout, SandboxType, VerboseConfig, WorkingDirectory
 
 
 class Config(BaseModel):
@@ -14,6 +14,7 @@ class Config(BaseModel):
     username: Optional[str] = None
     sandbox_type: SandboxType = Field(default_factory=SandboxType.default_aio)  # 沙盒类型
     working_directory: WorkingDirectory = Field(default_factory=WorkingDirectory.default)  # 工作目录
+    verbose_config: VerboseConfig = Field(default_factory=VerboseConfig.default)  # Verbose调试配置
     items: Dict[str, ConfigItem] = Field(default_factory=dict, exclude=True)
 
     model_config = {"frozen": False}
@@ -90,6 +91,38 @@ class Config(BaseModel):
         """
         self.working_directory = WorkingDirectory.from_path(path)
 
+    def update_verbose_config(
+        self,
+        level: str = None,
+        enable_timestamp: bool = None,
+        enable_color: bool = None,
+    ) -> None:
+        """更新Verbose调试配置
+
+        Args:
+            level: 调试级别 (off/error/info/debug)
+            enable_timestamp: 是否显示时间戳
+            enable_color: 是否使用彩色输出
+        """
+        if level is not None:
+            self.verbose_config = VerboseConfig.from_level(level)
+        elif enable_timestamp is not None or enable_color is not None:
+            # 部分更新
+            new_config = self.verbose_config.to_dict()
+            if enable_timestamp is not None:
+                new_config["enable_timestamp"] = enable_timestamp
+            if enable_color is not None:
+                new_config["enable_color"] = enable_color
+            self.verbose_config = VerboseConfig.from_dict(new_config)
+
+    def get_verbose_config(self) -> VerboseConfig:
+        """获取Verbose配置
+
+        Returns:
+            VerboseConfig 对象
+        """
+        return self.verbose_config
+
     def get_working_directory_path(self) -> str:
         """获取工作目录路径
 
@@ -107,6 +140,7 @@ class Config(BaseModel):
             "username": self.username,
             "sandbox_type": str(self.sandbox_type),
             "working_directory": str(self.working_directory),
+            "verbose_config": self.verbose_config.to_dict(),
             "items": [item.to_dict() for item in self.items.values()],
         }
 

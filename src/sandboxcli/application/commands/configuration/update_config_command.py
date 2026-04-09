@@ -15,6 +15,8 @@ class UpdateConfigCommand(BaseModel):
     config_value: Optional[str] = None
     base_url: Optional[str] = None  # AIO Sandbox HTTP API 地址
     working_directory: Optional[str] = None  # 工作目录
+    verbose: Optional[bool] = None  # 启用/禁用调试输出
+    verbose_level: Optional[str] = None  # 调试级别
 
     model_config = {"frozen": True}
 
@@ -37,6 +39,10 @@ class UpdateConfigCommand(BaseModel):
     def has_working_directory_update(self) -> bool:
         """判断是否有工作目录更新"""
         return self.working_directory is not None
+
+    def has_verbose_update(self) -> bool:
+        """判断是否有verbose配置更新"""
+        return self.verbose is not None or self.verbose_level is not None
 
     def has_custom_config_update(self) -> bool:
         """判断是否有自定义配置更新"""

@@ -130,6 +130,23 @@ class ConfigurationAppService:
             # 使用 ConfigAggregate 的方法更新工作目录，会触发事件
             self._config.update_working_directory(command.working_directory)
 
+        if command.has_verbose_update():
+            # 更新Verbose配置
+            # 当 verbose=True 但没有指定 level 时，默认设置为 info 级别
+            level = command.verbose_level
+            if command.verbose is not None and command.verbose_level is None:
+                # 用户指定了 --verbose 或 --no-verbose 但没有指定级别
+                if command.verbose:
+                    level = "info"  # 默认启用 INFO 级别
+                else:
+                    level = "off"
+            
+            self._config.update_verbose_config(
+                level=level,
+                enable_timestamp=None,
+                enable_color=None,
+            )
+
         if command.has_custom_config_update():
             self._config.update_item(command.config_key, command.config_value)
 

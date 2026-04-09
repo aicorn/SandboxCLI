@@ -8,6 +8,8 @@ from .sandbox_type import SandboxType, SandboxTypeEnum
 from .server_address import ServerAddress
 from .ssh_key import SSHKey
 from .timeout import Timeout
+from .verbose_config import VerboseConfig
+from .verbose_level import VerboseLevel, VerboseLevelEnum
 from .working_directory import WorkingDirectory
 
 __all__ = [
@@ -23,4 +25,7 @@ __all__ = [
     "SSHKey",
     "GitCredential",
     "WorkingDirectory",
+    "VerboseLevel",
+    "VerboseLevelEnum",
+    "VerboseConfig",
 ]
